@@ -1,8 +1,8 @@
 /*
  * check - check on checked out RCS files
  *
- * @(#) $Revision: 1.2 $
- * @(#) $Id: check.c,v 1.2 1999/09/22 01:36:50 chongo Exp chongo $
+ * @(#) $Revision: 1.3 $
+ * @(#) $Id: check.c,v 1.3 2000/11/27 05:51:13 chongo Exp chongo $
  * @(#) $Source: /usr/local/src/cmd/check/RCS/check.c,v $
  *
  * Please do not copyright this code.  This code is in the public domain.
@@ -30,10 +30,9 @@
 
 /*
  * check [-l | -d] [rcsdir]:
- *	- print out in a nice format, all the files that a person
- *	  has checked out in the RCS directory
- *	- if the "-l" flag is on, just print the real name of the
- *	  file (used the same as egrep -l is used)
+ *	- just print the real name of the file
+ *	- if the "-l" flag is on, print out in a nice format, all the
+ *	  files that a person has checked out in the RCS directory
  *	- if the "-d" flag is on, also print the date when the file was 
  *	  checked out.
  *
@@ -117,7 +116,7 @@ no_rcsdir:
 		sprintf(filename, "%s/%s", rcsdir, np->d_name);
 		if (readrcs (filename, &statBuf)) {
 			truename = realname(filename);
-			if (lflag)
+			if (!lflag)
 				printf("%s\n", truename);
 			else if (dflag)
 				printf("%-20s\t%s\t%s    %s",
