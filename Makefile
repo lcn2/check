@@ -1,4 +1,20 @@
-# $Id: Makefile,v 1.8 1996/03/06 17:12:59 chongo Exp $ 
+#!/usr/bin/make
+#
+# check - check for checked out RCS files
+#
+# @(#) $Revision$
+# @(#) $Id$
+# @(#) $Source$
+#
+# Please do not copyright this code.  This code is in the public domain.
+#
+# LANDON CURT NOLL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE,
+# INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO
+# EVENT SHALL LANDON CURT NOLL BE LIABLE FOR ANY SPECIAL, INDIRECT OR
+# CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF
+# USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
+# OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+# PERFORMANCE OF THIS SOFTWARE.
 
 SHELL = /bin/sh
 DEST = /usr/local/bin
@@ -6,15 +22,12 @@ RM = /bin/rm -f
 CP = /bin/cp
 CHMOD = /bin/chmod
 
-TARGETS = check rsync
+TARGETS = check
 
 all: ${TARGETS}
 
 check: check.c
 	${CC} ${CFLAGS} -o check check.c
-
-rsync: rsync.c
-	${CC} ${CFLAGS} -o rsync rsync.c
 
 install: all
 	@for i in ${TARGETS}; do \
