@@ -1,9 +1,9 @@
 /*
  * check - check on checked out RCS files
  *
- * @(#) $Revision$
- * @(#) $Id$
- * @(#) $Source$
+ * @(#) $Revision: 1.2 $
+ * @(#) $Id: check.c,v 1.2 1999/09/22 01:36:50 chongo Exp chongo $
+ * @(#) $Source: /usr/local/src/cmd/check/RCS/check.c,v $
  *
  * Please do not copyright this code.  This code is in the public domain.
  *
@@ -270,7 +270,8 @@ int readrcs (char *f, struct stat *statPtr)
 	revision[0] = 0;
 
 	owner_str = strtok (lockp, ":");
-	revision_str = strtok (NULL, ";\n\t");
+	if (owner_str != NULL)
+	    revision_str = strtok (NULL, ";\n\t");
 
 	if (owner_str == NULL || revision_str == NULL)
 	    return 0;
