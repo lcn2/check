@@ -3,7 +3,7 @@
 # check - check for checked out RCS files
 #
 # @(#) $Revision: 1.4 $
-# @(#) $Id: Makefile,v 1.4 2003/09/17 06:31:49 chongo Exp chongo $
+# @(#) $Id: Makefile,v 1.4 2003/09/17 06:31:49 chongo Exp $
 # @(#) $Source: /usr/local/src/cmd/check/RCS/Makefile,v $
 #
 # Please do not copyright this code.  This code is in the public domain.
@@ -21,10 +21,15 @@ DEST = /usr/local/bin
 RM = /bin/rm -f
 CP = /bin/cp
 CHMOD = /bin/chmod
+CC = cc
+CFLAGS = -O3
 
-TARGETS = check
+TARGETS = check rcheck
 
 all: ${TARGETS}
+
+check: check.c
+	${CC} ${CFLAGS} -o check check.c
 
 install: all
 	@for i in ${TARGETS}; do \
@@ -37,5 +42,7 @@ install: all
 	done
 
 clean:
+	${RM} *.o
 
 clobber: clean
+	${RM} check
