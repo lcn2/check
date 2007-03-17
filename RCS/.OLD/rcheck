@@ -2,9 +2,9 @@
 #
 # rcheck - recussive check
 #
-# @(#) $Revision: 1.12 $
-# @(#) $Id: testcfg,v 1.12 2003/09/17 05:50:37 chongo Exp $
-# @(#) $Source: /usr/local/src/etc/testcfg/RCS/testcfg,v $
+# @(#) $Revision: 1.1 $
+# @(#) $Id: rcheck,v 1.1 2003/09/17 06:31:08 chongo Exp chongo $
+# @(#) $Source: /usr/local/src/cmd/check/RCS/rcheck,v $
 #
 # Copyright (c) 2002 by Landon Curt Noll.  All Rights Reserved.
 #
@@ -41,11 +41,19 @@ if [[ $# -lt 1 ]]; then
 else
     ARG_SET="$@"
 fi
+if [ -x /bin/egrep ]; then
+    EGREP_PROG="/bin/egrep"
+elif [ -x /usr/bin/egrep ]; then
+    EGREP_PROG="/usr/bin/egrep"
+else
+    echo "$0: Fatal: egrep is not executable/found" 1>&2
+    exit 2
+fi
 
 # look for RCS checked out config files
 #
 /usr/bin/find $ARG_SET -name RCS -type d -print 2>/dev/null |
-  /bin/egrep -v '/\.OLD/|/UNUSED/' |
+  "$EGREP_PROG" -v '/\.OLD/|/UNUSED/' |
   while read rcsdir; do
     if [[ ! -x "$rcsdir" || ! -r "$rcsdir" ]]; then
 	echo "# Warning: cannot read/search $rcsdir" 1>&2
