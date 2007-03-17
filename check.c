@@ -1,8 +1,8 @@
 /*
  * check - check on checked out RCS files
  *
- * @(#) $Revision: 3.1 $
- * @(#) $Id: check.c,v 3.1 2007/03/17 12:24:20 chongo Exp chongo $
+ * @(#) $Revision: 3.2 $
+ * @(#) $Id: check.c,v 3.2 2007/03/17 12:36:39 chongo Exp chongo $
  * @(#) $Source: /usr/local/src/cmd/check/RCS/check.c,v $
  *
  * Please do not copyright this code.  This code is in the public domain.
@@ -52,7 +52,9 @@ char revision[MAX_REVIS_LEN+1];	/* revision of file co'd */
 int dflag = 0;			/* print RCS mod date */
 int hflag = 0;			/* print help and exit */
 int lflag = 0;			/* print RCS lock info */
+int mflag = 0;			/* report missing files under RCS */
 int pflag = 0;			/* print the real path of a file */
+int qflag = 0;			/* do not report locked filenames */
 int rflag = 0;			/* recursive search for checked files */
 int vflag = 0;			/* verbosity level */
 
@@ -61,9 +63,15 @@ int vflag = 0;			/* verbosity level */
  *
  * 0 ==> no locks, all is OK
  * 1 ==> some locks, all is OK
- * 2 ==> no locks, access permission problems or RCS format problems
- * 3 ==> some locks, access permission problems or RCS format problems
- * 4 ==> fatal error
+ * 2 ==> no locks, some RCS files not checked out
+ * 3 ==> some locks, some RCS files not checked out
+ *
+ * 4 ==> no locks, access or RCS format problems
+ * 5 ==> some locks, access or RCS format problems
+ * 6 ==> no locks, some RCS not checked out, access or RCS format problems
+ * 7 ==> some locks, some RCS not checked out, access or RCS format problems
+ *
+ * 8 ==> fatal error
  *
  * NOTE: Format errors are reserved for mal-formed ,v files that we can
  *	 read.  Access errors are reserved for not being able to read/access
@@ -72,8 +80,9 @@ int vflag = 0;			/* verbosity level */
  *	 will not cause exitcode to change.
  */
 #define EXIT_MASK_LOCK    0x1		/* set bit if lock found */
-#define EXIT_MASK_ACCESS  0x2		/* set bit if access errors */
-#define EXIT_FATAL 4			/* fatal error encounted */
+#define EXIT_MASK_MISSING  0x2		/* set bit if RCS missing file */
+#define EXIT_MASK_ACCESS  0x4		/* set bit if access errors */
+#define EXIT_FATAL 8			/* fatal error encounted */
 int exitcode = 0;			/* how we will/should exit */
 
 static char *program;		/* our name */
@@ -114,7 +123,7 @@ main(int argc, char *argv[])
 	pflag = 1;
 	rflag = 1;
     }
-    while ((i = getopt(argc, argv, "lhdprv:")) != -1) {
+    while ((i = getopt(argc, argv, "dlmpqrv:h")) != -1) {
 	switch (i) {
 	case 'd':
 	    dflag = 1;
@@ -122,8 +131,14 @@ main(int argc, char *argv[])
 	case 'l':
 	    lflag = 1;
 	    break;
+	case 'm':
+	    mflag = 1;
+	    break;
 	case 'p':
 	    pflag = 1;
+	    break;
+	case 'q':
+	    qflag = 1;
 	    break;
 	case 'r':
 	    rflag = 1;
@@ -136,20 +151,28 @@ main(int argc, char *argv[])
 	    /*FALLTHRU*/
 	default:
 	    fprintf(stderr,
-	    	"usage: %s [-d] [-h] [-l] [-p] [-r] [-v level] [path ...]\n"
+	    	"usage: %s [-d] [-h] [-l] [-m] [-p] [-r] [-v level] [path ...]\n"
 		"\n"
-		"\t-d\t\tprint RCS modifcation timestamp\n"
-		"\t-h\t\tprint help and exit 0\n"
-		"\t-l\t\tprint RCS lock information\n"
-		"\t-p\t\tprint resolved absolute paths (implied by rcheck)\n"
-		"\t-r\t\trecursive search (except under RCS) (implied by rcheck)\n"
+		"\t-d\t\tprint RCS modifcation timestamp (def: don't)\n"
+		"\t-h\t\tprint help and exit 0 (def: don't)\n"
+		"\t-l\t\tprint RCS lock information (def: don't)\n"
+		"\t-m\t\talso report missing files under RCS control (def: don't)\n"
+		"\t-p\t\tprint resolved absolute paths (def: don't unless rcheck)\n"
+		"\t-q\t\tdo not report locked filenames (def: do)\n"
+		"\t-r\t\trecursive search (def: don't unless rcheck)\n"
 		"\t-v level\tdebugging level\n"
 		"\n"
-		"exit 0 ==> no lock(s) found\n"
-		"exit 1 ==> some lock(s) found\n"
-		"exit 2 ==> permission or RCS error(s), no lock(s) found\n"
-		"exit 3 ==> permission or RCS error(s), some lock(s) found\n"
-		"exit 4 ==> fatal error\n", program);
+		"exit 0 ==> no locks, all is OK\n"
+		"exit 1 ==> some locks, all is OK\n"
+		"exit 2 ==> no locks, some not checked out\n"
+		"exit 3 ==> some locks, some not checked out\n"
+		"\n"
+		"exit 4 ==> no locks, access/RCS format problems\n"
+		"exit 5 ==> some locks, access/RCS format problems\n"
+		"exit 6 ==> no locks, some not checked out, access/RCS problems\n"
+		"exit 7 ==> some locks, some not checked out, access/RCS problems\n"
+		"\n"
+		"exit 8 ==> fatal error\n", program);
 	    dbg(1, "exit(%d)", hflag ? 0 : EXIT_FATAL);
 	    exit(hflag ? 0 : EXIT_FATAL);
 	}
@@ -464,7 +487,14 @@ process_arg(char *arg)
 /*
  * scan_rcsfile - scan an RCS file for a lock
  *
- * NOTE: This function prints lock results as per the -d and -l flags.
+ * This function prints lock results as per the -d and -l flags.
+ *
+ * If -m was given, missing files are reported if they are locked or not.
+ * Unlocked missing files with -l report the locking user as :gone:
+ * and the revision as -1.
+ *
+ * If -q, then locked files are not reported, unless -m is also given
+ * and the file is missing.
  *
  * given:
  *	filename	path/RCS/foo,v filename
@@ -477,9 +507,14 @@ process_arg(char *arg)
 static void
 scan_rcsfile(char *filename, char *arg)
 {
-    struct stat sbuf;	/* file status */
+    struct stat sbuf;	/* filename status */
+    struct stat fbuf;	/* non-RCS  status */
     int ret;		/* 0 ==> nothing to print, 1 ==> something to print */
     char resolved[PATH_MAX+1];	/* full pathname of a locked file */
+    char *missing_base;	/* basename of missing file */
+    char *missing_dir;	/* dirname of missing file */
+    int missing;	/* 1 ==> RCS file exists but not checked out */
+    int need_nl;	/* 1 ==> need some newline since we printed something */
 
     /*
      * firewall
@@ -500,25 +535,167 @@ scan_rcsfile(char *filename, char *arg)
     /*
      * print results if locked
      */
+    need_nl = 0;
     if (ret != 0) {
 
-	/* print non-RCS name, compute if needed */
+	/* commpte and print locked non-RCS name */
 	if (arg == NULL) {
 
 	    /* deternime non-RCS name */
 	    arg = rcs_2_pathname(filename);
+	    if (stat(arg, &fbuf) < 0 || !S_ISREG(fbuf.st_mode)) {
+	    	missing = 1;
+		dbg(7, "locked file not checked out: %s", arg);
+	    } else {
+		missing = 0;
+	    }
 
 	    /* print full path if -p */
 	    if (pflag) {
+	        if (missing || realpath(arg, resolved) == NULL) {
+		    /* because file is missing, we must resolve the dirname */
+		    missing = 1;
+		    missing_dir = dir_name(arg);
+		    missing_base = base_name(arg);
+		    errno = 0;
+		    if (realpath(missing_dir, resolved) == NULL) {
+			warn("cannot resolve missing dir", missing_dir, errno);
+			exitcode |= EXIT_MASK_ACCESS;
+			dbg(7, "exitcode is now %d", exitcode);
+			printf("%s/%s", missing_dir, missing_base);
+		    } else {
+			printf("%s/%s", resolved, missing_base);
+		    }
+		    need_nl = 1;
+		    free(missing_base);
+		    free(missing_dir);
+
+		/* skip printing locked of -q */
+		} else if (!qflag) {
+		    printf("%s", resolved);
+		    need_nl = 1;
+		}
+
+	    /* print just the arg without -p unless -q */
+	    } else if (!qflag) {
+		if (missing) {
+		    exitcode |= EXIT_MASK_MISSING;
+		    dbg(7, "exitcode is now %d", exitcode);
+		}
+		printf("%s", arg);
+		need_nl = 1;
+	    }
+	    free(arg);
+
+	/*
+	 * print locked name using the pre-computed name that was passed
+	 */
+	} else {
+
+	    /* determine if the pre-computed arg exists */
+	    if (stat(arg, &fbuf) < 0 || !S_ISREG(fbuf.st_mode)) {
+	    	missing = 1;
+		dbg(7, "locked file not checked out: %s", arg);
+	    } else {
+		missing = 0;
+	    }
+
+	    /* print full path if -p */
+	    if (pflag) {
+	        if (missing || realpath(arg, resolved) == NULL) {
+		    /* because file is missing, we must resolve the dirname */
+		    missing = 1;
+		    exitcode |= EXIT_MASK_MISSING;
+		    dbg(7, "exitcode is now %d", exitcode);
+		    missing_dir = dir_name(arg);
+		    missing_base = base_name(arg);
+		    errno = 0;
+		    if (realpath(missing_dir, resolved) == NULL) {
+			warn("can't resolve missing dir", missing_dir, errno);
+			exitcode |= EXIT_MASK_ACCESS;
+			dbg(7, "exitcode is now %d", exitcode);
+			printf("%s/%s", missing_dir, missing_base);
+		    } else {
+			printf("%s/%s", resolved, missing_base);
+		    }
+		    need_nl = 1;
+		    free(missing_base);
+		    free(missing_dir);
+
+		/* skip printing locked of -q */
+		} else if (!qflag) {
+		    printf("%s", resolved);
+		    need_nl = 1;
+		}
+
+	    /* print just the arg without -p unless -q */
+	    } else if (!qflag) {
+		if (missing) {
+		    exitcode |= EXIT_MASK_MISSING;
+		    dbg(7, "exitcode is now %d", exitcode);
+		}
+		printf("%s", arg);
+		need_nl = 1;
+	    }
+	}
+
+	/* if -l, print owner and locked version */
+	if (lflag) {
+
+	    /* be quiet about locked files if -q unless missing and -m */
+	    if (qflag) {
+	    	if (missing && mflag) {
+		    printf("\t:gone:\t-1");
+		}
+
+	    /* otherwise print locked file (no -q) */
+	    } else {
+		printf("\t%s\t%s", owner, revision);
+	    }
+	}
+
+	/* if -d, print RCS mod date unless -q or missing */
+	if (dflag && (!qflag || missing)) {
+	    printf("\t%s", ctime(&(sbuf.st_mtime)));
+
+	/* otherwise print newline if we printed something */
+	} else if (need_nl) {
+	    putchar('\n');
+	}
+	fflush(stdout);
+
+    /*
+     * not locked, but file is missing and -m
+     */
+    } else if (mflag) {
+
+	/* determine non-RCS name */
+	if (arg == NULL) {
+	    arg = rcs_2_pathname(filename);
+	}
+
+	/*
+	 * report if file is missing and -m
+	 */
+	if (stat(arg, &fbuf) < 0 || !S_ISREG(fbuf.st_mode)) {
+	    /* non-RCS missing, report it */
+	    exitcode |= EXIT_MASK_MISSING;
+	    dbg(7, "exitcode is now %d", exitcode);
+	    if (pflag) {
+		/* because file is missing, we must resolve the dirname */
+		missing_dir = dir_name(arg);
+		missing_base = base_name(arg);
 		errno = 0;
-	        if (realpath(arg, resolved) == NULL) {
-		    warn("cannot resolve locked file", arg, errno);
+	        if (realpath(missing_dir, resolved) == NULL) {
+		    warn("cannot resolve missing dir", missing_dir, errno);
 		    exitcode |= EXIT_MASK_ACCESS;
 		    dbg(7, "exitcode is now %d", exitcode);
-		    printf("%s", arg);
+		    printf("%s/%s", missing_dir, missing_base);
 		} else {
-		    printf("%s", resolved);
+		    printf("%s/%s", resolved, missing_base);
 		}
+		free(missing_base);
+		free(missing_dir);
 
 	    /* print just the arg without -p */
 	    } else {
@@ -526,41 +703,19 @@ scan_rcsfile(char *filename, char *arg)
 	    }
 	    free(arg);
 
-	/*
-	 * print non-RCS name
-	 */
-	} else {
-
-	    /* print full path if -p */
-	    if (pflag) {
-		errno = 0;
-	        if (realpath(arg, resolved) == NULL) {
-		    warn("cannot resolve locked file", arg, errno);
-		    exitcode |= EXIT_MASK_ACCESS;
-		    dbg(7, "exitcode is now %d", exitcode);
-		    printf("%s", arg);
-		} else {
-		    printf("%s", resolved);
-		}
-
-	    /* print just the arg without -p */
-	    } else {
-		printf("%s", arg);
+	    /* if -l, print fake owner and locked version */
+	    if (lflag) {
+		printf("\t:gone:\t-1");
 	    }
-	}
 
-	/* if -l, print owner and locked version */
-	if (lflag) {
-	    printf("\t%s\t%s", owner, revision);
+	    /* if -d, print RCS mod date */
+	    if (dflag) {
+		printf("\t%s", ctime(&(sbuf.st_mtime)));
+	    } else {
+		putchar('\n');
+	    }
+	    fflush(stdout);
 	}
-
-	/* if -d, print RCS mod date */
-	if (dflag) {
-	    printf("\t%s", ctime(&(sbuf.st_mtime)));
-	} else {
-	    putchar('\n');
-	}
-	fflush(stdout);
     }
     return;
 }
