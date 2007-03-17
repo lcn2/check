@@ -1,8 +1,8 @@
 /*
  * check - check on checked out RCS files
  *
- * @(#) $Revision: 1.3 $
- * @(#) $Id: check.c,v 1.3 2000/11/27 05:51:13 chongo Exp chongo $
+ * @(#) $Revision: 1.4 $
+ * @(#) $Id: check.c,v 1.4 2003/09/17 05:24:26 chongo Exp chongo $
  * @(#) $Source: /usr/local/src/cmd/check/RCS/check.c,v $
  *
  * Please do not copyright this code.  This code is in the public domain.
@@ -14,6 +14,16 @@
  * USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
  * OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
+ *
+ * There was an old version of this code that was written by: Kipp Hickman
+ * The many bug fixes, many security fixes, major code cleanup / rewrite,
+ * the change of -l to prints lock info (not filenames), the other flags
+ * were all performed by:
+ *
+ * 	chongo (Landon Curt Noll) /\oo/\
+ * 	http://www.isthe.com/chongo/index.html
+ *
+ * Share and Enjoy!  :-)
  */
 
 #include <stdio.h>
@@ -27,258 +37,1702 @@
 #include <sys/param.h>
 #include <fcntl.h>
 #include <ctype.h>
+#include <unistd.h>
+#include <time.h>
+#include <string.h>
+#include <libgen.h>
+#include <errno.h>
+#include <stdarg.h>
+
+#define MAX_OWNER_LEN 20	/* longest owner printed */
+#define MAX_REVIS_LEN 20	/* longest owner revision printed */
+char owner[MAX_OWNER_LEN+1];	/* owner of file co'd */
+char revision[MAX_REVIS_LEN+1];	/* revision of file co'd */
+int dflag = 0;			/* print RCS mod date */
+int hflag = 0;			/* print help and exit */
+int lflag = 0;			/* print RCS lock info */
+int pflag = 0;			/* print the real path of a file */
+int rflag = 0;			/* recursive search for checked files */
+int vflag = 0;			/* verbosity level */
 
 /*
- * check [-l | -d] [rcsdir]:
- *	- just print the real name of the file
- *	- if the "-l" flag is on, print out in a nice format, all the
- *	  files that a person has checked out in the RCS directory
- *	- if the "-d" flag is on, also print the date when the file was 
- *	  checked out.
+ * exit codes
  *
- * Written by: Kipp Hickman
+ * 0 ==> no locks, all is OK
+ * 1 ==> some locks, all is OK
+ * 2 ==> no locks, access permission problems or RCS format problems
+ * 3 ==> some locks, access permission problems or RCS format problems
+ * 4 ==> fatal error
+ *
+ * NOTE: Format errors are reserved for mal-formed ,v files that we can
+ *	 read.  Access errors are reserved for not being able to read/access
+ *	 files and directories.  Encountering a ,v inode that is not a
+ *	 regular file or encounting an RCS inode that is not a directory
+ *	 will not cause exitcode to change.
  */
+#define EXIT_MASK_LOCK    0x1		/* set bit if lock found */
+#define EXIT_MASK_ACCESS  0x2		/* set bit if access errors */
+#define EXIT_FATAL 4			/* fatal error encounted */
+int exitcode = 0;			/* how we will/should exit */
 
-char	filename[2000];			/* current file name */
-char	line[2000];			/* rcs file line being parsed */
-char	owner[50];			/* owner of file co'd */
-char	revision[20];			/* revision of file co'd */
-short	lflag;				/* like egrep -l, print just names */
-short	dflag;				/* print the date when the file was
-					 * checked out */ 
+static char *program;		/* our name */
+static char *prog;		/* basename of program */
 
-char	*rcsdir;			/* place to look in */
+static void process_arg(char *arg);
+static void scan_rcsfile(char *filename, char *arg);
+static void scan_rcsdir(char *dir, char *dir2, int recurse);
+static size_t strendstr(char *str1, size_t *len1p, char *str2, size_t *len2p);
+static char *rcs_2_pathname(char *rcsname);
+static char *dir_2_rcsdir(char *dirname);
+static char *file_2_filev(char *filename);
+static char *filev_2_file(char *filename);
+static char *pathname_2_rcs(char *pathname);
+static char *skipblanks(char *cp);
+static int check_rcs_hdr(char *p, char *msg, char *fname, char *end_rcs_header);
+static int readrcs(char *f, struct stat *statPtr);
+static char *base_name(char *path);
+static char *dir_name(char *path);
+static void dbg(int level, char *fmt, ...);
+static void warn(char *warn1, char *warn2, int err);
+static void fatal(char *msg1, char *msg2, int err);
 
-#define	RCSDIR_DEFAULT	"RCS"
 
-char	*realname();
-int	readrcs(char *, struct stat *);
-
-extern char *ctime();
-
-main(argc, argv)
-	int argc;
-	char *argv[];
+int
+main(int argc, char *argv[])
 {
-	register struct dirent *np;
-	register short i;
-	register char *truename;
-	register DIR *d;
-	int found;
-	struct stat statBuf;
+    extern char *optarg;	/* option argument */
+    extern int optind;		/* argv index of the next arg */
+    char *arg;			/* arg being processed */
+    int i;
 
-	for (i = 1; i < argc; i++) {
-		if (argv[i][0] == '-') {
-			switch (argv[i][1]) {
-			  case 'l':
-				lflag++;
-				break;
-			  case 'd':
-				dflag++;
-				break;
-			  default:
-				goto usage;
-			}
-		} else {
-			if (rcsdir == NULL)
-				rcsdir = argv[i];
-			else {
-usage:				fprintf(stderr, "Usage:\n%s [-dl] [rcsdir]\n",
-						argv[0]);
-				exit(2);
-			}
-		}
+    /* parse args */
+    program = argv[0];
+    prog = base_name(program);
+    if (prog[0] == 'r') {
+	/* if progrsam starts with r, assume -r -p */
+	pflag = 1;
+	rflag = 1;
+    }
+    while ((i = getopt(argc, argv, "lhdprv:")) != -1) {
+	switch (i) {
+	case 'd':
+	    dflag = 1;
+	    break;
+	case 'l':
+	    lflag = 1;
+	    break;
+	case 'p':
+	    pflag = 1;
+	    break;
+	case 'r':
+	    rflag = 1;
+	    break;
+	case 'v':
+	    vflag = atoi(optarg);
+	    break;
+	case 'h':
+	    hflag = 1;
+	    /*FALLTHRU*/
+	default:
+	    fprintf(stderr,
+	    	"usage: %s [-d] [-h] [-l] [-p] [-r] [-v level] [path ...]\n"
+		"\n"
+		"\t-d\t\tprint RCS mod date\n"
+		"\t-h\t\tprint help and exit\n"
+		"\t-l\t\tprint RCS lock information\n"
+		"\t-p\t\tprint resolved absolute paths\n"
+		"\t-r\t\trecursive search (except under RCS)\n"
+		"\t-v level\tdebugging level\n"
+		"\n"
+		"exit 0 ==> no lock(s) found\n"
+		"exit 1 ==> some lock(s) found\n"
+		"exit 2 ==> permission or RCS error(s), no lock(s) found\n"
+		"exit 3 ==> permission or RCS error(s), some lock(s) found\n"
+		"exit 4 ==> fatal error\n", program);
+	    dbg(1, "exit(%d)", EXIT_FATAL);
+	    exit(hflag ? 0 : EXIT_FATAL);
 	}
+    }
+    argc -= optind;
+    argv += optind;
+    /* NOTE: if no args, arg will be NULL which is OK for process_arg() */
+    arg = argv[0];
+    dbg(1, "argc: %d  exitcode: %d", argc, exitcode);
 
-	if (rcsdir == NULL) {
-		rcsdir = RCSDIR_DEFAULT;
-		if (!exists(rcsdir)) {
-			rcsdir = ".";
-			if (!exists(rcsdir))
-				goto no_rcsdir;
-		}
-	} else {
-		if (!exists(rcsdir))
-			goto no_rcsdir;
-	}
+    /*
+     * process all the remaining files and dirs on the command line
+     */
+    do {
+	/* process this argument (or the default RCS argument) */
+	process_arg(arg);
+    } while (--argc > 0 && (arg = (++argv)[0]) != NULL);
 
-    /* read in the contents of the directory */
-
-	if ((d = opendir(rcsdir)) == NULL) {
-no_rcsdir:
-		fprintf(stderr, "%s: unable to open \"%s\"\n",
-				argv[0], rcsdir);
-		exit(2);
-	}
-
-	found = 0;
-	while (np = readdir(d)) {
-		sprintf(filename, "%s/%s", rcsdir, np->d_name);
-		if (readrcs (filename, &statBuf)) {
-			truename = realname(filename);
-			if (!lflag)
-				printf("%s\n", truename);
-			else if (dflag)
-				printf("%-20s\t%s\t%s    %s",
-					    truename, owner, revision,
-					    ctime(&statBuf.st_mtime));
-			else
-				printf("%-20s\t%s revision %s\n",
-					    truename, owner, revision);
-			found++;
-		}
-	}
-	if (found)
-		exit(1);
-	else
-		exit(0);
+    /*
+     * exit according to what was found and/or errors
+     */
+    dbg(1, "exit(%d)", exitcode);
+    exit(exitcode);
 }
+
 
 /*
- * exists:
- *	- see if "name" exists (is stat'able)
+ * process_arg - process an argument looking for locked RCS files
+ *
+ * given:
+ *	name	name of the directory or file to examine, NULL ==> .
+ *
+ * NOTE: This function will NOT alter exitcode if it encounters a
+ *	 ,v file that is not a regular file nor will if if finds an
+ *	RCS inode that is not a directory.  Format errors are reserved
+ *	for mal-formed ,v files that we can read.  Access errors are
+ *	reserved for not being able to read/access files and directories.
  */
-exists(name)
-	char *name;
+static void
+process_arg(char *arg)
 {
-	struct stat sbuf;
+    struct stat sbuf;	/* file status */
+    struct stat rbuf;	/* RCS status */
+    int statret;	/* 0 ==> arg exists, -1 ==> arg does not exist */
+    size_t len;		/* arg length */
+    char *modarg;	/* malloced and modified copy of arg */
+    int hasrcs;		/* 0 ==> dir has RCS subdir, -1 ==> no RCS subdir */
+    char *tmp;
 
-	if (stat(name, &sbuf) == -1)
-		return 0;
-	if ((sbuf.st_mode & S_IFMT) == S_IFDIR)
-		return 1;
-	return 0;
-}
+    /*
+     * firewall
+     */
+    if (arg == NULL) {
+	/*
+	 * When this program is not given args, the loop in main
+	 * calls this function once with a NULL pointer.  We treat
+	 * this special no arg case as if . were given.
+	 */
+	dbg(1, "arg was NULL");
+	arg = ".";
+    }
+    if (arg[0] == '\0') {
+	/* empty strings are considered . as well */
+	dbg(1, "arg was empty");
+	arg = ".";
+    }
+    dbg(1, "processing arg: %s", arg);
 
-/*
- * realname:
- *	- given an rcs name, rip its lips off, and leave just the
- *	  actual file name (no path in front, no ,v in back)
- */
-char *
-realname(s)
-	char *s;
-{
-	register char *cp;
-
-	if (cp = strrchr(s, '/'))
-		s = cp + 1;
-	if (cp = strrchr(s, ','))
-		*cp = 0;
-	return s;
-}
-
-static char *fname;
-static char *end_rcs_header;
-
-static char * skipblanks(cp)
-char *cp;
-{
-	while (isspace(*cp)) cp++;
-	return cp;
-}
-
-char *strndup (const char *s1, const size_t sz)
-{
-	char * s2;
-
-	if ((s2 = malloc((unsigned) sz+1)) == NULL) {
-		fprintf(stderr,"check: no memory\n");
-		exit(2);
-	}
-	strncpy (s2, s1, sz);
-	s2[sz] = '\0';
-	return s2;
-}
-
-void
-warn (char *s, char *f){
-#if 0
-	fprintf(stderr,"check warning: %s: %s\n", f, s);
-#endif
-}
-extern char *strndup (const char *s1, const size_t sz);
-
-static check (char *p, char *msg)
-{
-	if (p == NULL || p > end_rcs_header)
-		{ warn (msg, fname); return -1; }
-	return 0;
-}
-
-int readrcs (char *f, struct stat *statPtr)
-{
-	int fd = -1;
-	char *owner_str, *revision_str;
-	char *buf = (char *)(-1), *p, *q;
-	char *lockp;
-
-	fname = f;
-	if ((fd = open (fname, O_RDONLY)) < 0)
-		{ warn ("open:", fname); return 0; }
-	if (fstat (fd, statPtr) < 0)
-		{ warn ("stat:", fname); return 0; }
-	if (statPtr->st_size == 0)
-		{ warn ("zero length file:", fname); return 0; }
-	buf = (char *)mmap((void *)0, statPtr->st_size, PROT_READ|PROT_WRITE, MAP_PRIVATE, fd, 0);
-	if (buf == (char *)(-1))
-		{ warn ("mmap:", fname); return 0; }
-
-	if (strncmp (buf, "head", sizeof("head")-1) != 0)
-		{ warn ("missing head:", fname); return 0; }
+    /*
+     * case: arg ends in ,v
+     *
+     * We must deal with the ending in ,v case first before considering
+     * normal cases of directories and files because of the way RCS
+     * tools process such ,v ending arguments.
+     *
+     * NOTE: I didn't make the rules below, the RCS tools did!
+     */
+    statret = stat(arg, &sbuf);
+    if (strendstr(arg, &len, ",v", NULL) > 0) {
 
 	/*
-	 * The strstr calls presume that there is at least one nul character
-	 * following all the valid data.  The mmap gives us this, except in
-	 * the case that the mapped file ends exactly on a page boundary.
-	 * In that case we overwrite the last character in the file with a nul.
+	 * case: arg ends in ,v and has NO / in the path
 	 *
-	 * This slight disregard for the file's data is actually user visible:
-	 * Truncate an RCS ,v file so that it ends with "\ndesc\n".  If the file
-	 * is any size other than a page multiple, this code will think the header
-	 * is fine, ignore the truncation, and find what it wants.  If the file
-	 * happens to end up an exact page multiple, this code will write a nul
-	 * over the final "\n", then be unable to find end_rcs_header, and complain
-	 * that the file has "no desc line".  Who cares ...
+	 * The RCS tools, when given just "foo,v" will first look for
+	 * a RCS/foo,v file (even when ./foo,v exists).  If RCS/foo,v
+	 * does not exist, then the RCS tool will look for the foo,v file.
+	 *
+	 * If we are procesing "foo,v" and RCS/foo,v exists but is
+	 * not a file, then the RCS tool report an error.  We consider
+	 * foo to not be locked when RCS/foo,v exists and is not a file.
+	 *
+	 * If we are procesing "foo,v" and RCS/foo,v does NOT exist,
+	 * then "./foo,v is examined for locking.
 	 */
-	if ( (statPtr->st_size % getpagesize()) == 0 )
-		buf[statPtr->st_size-1] = '\0';
+	dbg(3, ",v arg processing");
+	if (strchr(arg, '/') == NULL) {
 
-	if ((end_rcs_header = strstr (buf, "\ndesc\n")) == NULL)
-		{ warn ("no desc line:", fname); return 0; }
+	    /*
+	     * case: arg ends in ,v and has NO / and RCS as a ,v file
+	     *
+	     * NOTE: We have to check the RCS sub-directory even when
+	     * 	     the file, arg, exists.
+	     */
+	    tmp = filev_2_file(arg);
+	    modarg = pathname_2_rcs(tmp);
+	    hasrcs = stat(modarg, &rbuf);
+	    if (hasrcs >= 0 && S_ISREG(rbuf.st_mode)) {
+		/* found RCS/arg,v file, scan it */
+		dbg(5, "RCS *,v file found: %s", modarg);
+		scan_rcsfile(modarg, tmp);
 
-	p = buf + sizeof("head")-1;
-	p = skipblanks (p);		{ if (check (p, "invalid head line:")) return 0; }
-	q = strchr (p, ';');		{ if (check (q, "invalid head format:")) return 0; }
+	    /*
+	     * case: arg ends in ,v and has NO / and RCS has a non-file ,v
+	     *
+	     * NOTE: The RCS tools will ignore arg (an exising ,v file)
+	     *	     when they discover that the RCS ,v exists but is
+	     *	     not a file.
+	     */
+	    } else if (hasrcs >= 0) {
+		/* found RCS/arg,v but it is not a regular file, so no lock */
+		dbg(5, "RCS *,v non-file found: %s", modarg);
 
-	p = strstr (p, "\nlocks");	{ if (check (p, "no locks:")) return 0; }
-	p += sizeof("\nlocks")-1;
-	p = skipblanks (p);		{ if (check (p, "invalid locks:")) return 0; }
-	q = strchr (p, ';');		{ if (check (q, "invalid locks format:")) return 0; }
-	lockp = strndup (p, q - p);
-	if (buf != (char *)(-1)) {
-		if (munmap (buf, statPtr->st_size) < 0) {
-			fprintf (stderr,"check: munmap failed\n");
-			exit(2);
-		}
+	    /*
+	     * case: arg ends in ,v and has NO /, RCS has no ,v, arg is a file
+	     *
+	     * NOTE: When given just "foo,v" and no RCS/foo,v exists,
+	     *	     the RCS tools will look at "./foo,v".
+	     */
+	    } else if (statret >= 0 && S_ISREG(sbuf.st_mode)) {
+
+		/* scan the ,v file directly */
+		dbg(5, ". *,v file found: %s", arg);
+		scan_rcsfile(arg, tmp);
+
+	    /*
+	     * case: arg ends in ,v and has NO /, no RCS ,v and no arg file
+	     * case: arg ends in ,v and has NO /, no RCS ,v and arg not a file
+	     */
+	    } else {
+		/* no ,v file, no lock */
+		dbg(5, "no RCS *,v and no . *,v found");
+	    }
+	    free(tmp);
+	    free(modarg);
+
+	/*
+	 * case: arg exists, ends in ,v and has a / in it, and is NOT a file
+	 *
+	 * If an RCS tool is given "stuff/foo,v" where the arg has a /
+	 * in it, then only "stuff/foo,v" is examined.  Unlike the case
+	 * where the arg as no /, RCS does not examine "stuff/RCS/foo,v".
+	 *
+	 * When the ,v arg is not a regular file, the RCS tool returns a
+	 * error.  We consider these files to not be locked.
+	 */
+	} else if (statret >= 0 && !S_ISREG(sbuf.st_mode)) {
+	    /* ,v is not an regular file, so it is not locked */
+	    dbg(5, "RCS/*,v non-file found: %s", arg);
+
+	/*
+	 * case: arg is a ,v file, ends in ,v and has a / in it, and is a file
+	 *
+	 * Unlike the case of just "foo,v", the RCS tools only look at ./foo,v
+	 * when given "./foo,v" for example.
+	 */
+	} else if (statret >= 0 && S_ISREG(sbuf.st_mode)) {
+
+	    /* scan the ,v file directly */
+	    dbg(5, "./*,v file found: %s", arg);
+	    scan_rcsfile(arg, NULL);
+
+	/*
+	 * case: arg ends in ,v but does not exist
+	 */
+	} else {
+	    char *tmp;
+
+	    /*
+	     * case: arg does not exist but the RCS subdir has the ,v
+	     */
+	    tmp = filev_2_file(arg);
+	    modarg = pathname_2_rcs(tmp);
+	    hasrcs = stat(modarg, &rbuf);
+	    if (hasrcs >= 0 && S_ISREG(rbuf.st_mode)) {
+		/* found arg,v file, scan it */
+		dbg(5, "RCS/*,v file found: %s", modarg);
+		scan_rcsfile(modarg, tmp);
+
+	    /*
+	     * case: arg does not exist, and no ,v file in RCS subdir
+	     */
+	    } else {
+		/* no ,v file, no lock */
+		dbg(5, "no RCS/*,v and no ./*,v found");
+	    }
+	    free(tmp);
+	    free(modarg);
 	}
-	if (fd >= 0)
-		close (fd);
 
-	owner[0] = 0;
-	revision[0] = 0;
 
-	owner_str = strtok (lockp, ":");
-	if (owner_str != NULL)
-	    revision_str = strtok (NULL, ";\n\t");
+    /*
+     * case: arg does not end in ,v and is a directory (and exists)
+     */
+    } else if (statret >= 0 && S_ISDIR(sbuf.st_mode)) {
 
-	if (owner_str == NULL || revision_str == NULL)
-	    return 0;
+	/*
+	 * case: arg is a directory and ends in RCS (or is just RCS)
+	 */
+	dbg(3, "directory arg processing");
+	if (strendstr(arg, &len, "/RCS", NULL) > 0 || strcmp(arg, "RCS") == 0) {
 
-	strncpy (owner, owner_str, sizeof(owner));
-	strncpy (revision, revision_str, sizeof(revision));
-	owner[sizeof(owner)-1] = 0;
-	revision[sizeof(revision)-1] = 0;
+	    /* arg is a RCS directory: only look for for ,v files in it */
+	    dbg(5, "arg is an RCS directory: %s", arg);
+	    scan_rcsdir(arg, NULL, 0);
 
-	return 1;
+	/*
+	 * case: arg is a directory and the last path component is not RCS
+	 */
+	} else {
+
+	    /*
+	     * case: arg is a directory and an RCS sub-directory exists
+	     */
+	    modarg = dir_2_rcsdir(arg);
+	    hasrcs = stat(modarg, &rbuf);
+	    if (hasrcs >= 0 && S_ISDIR(rbuf.st_mode)) {
+
+		/*
+		 * First, only scan RCS sub-directory for ,v files,
+		 * then scan the arg directory for ,v files that are
+		 * not also under the RCS sub-directory.
+		 *
+		 * NOTE: If ./foo,v and ./RCS/foo,v both exist, then
+		 *	 the RCS tools only process ./RCS/foo,v.  Even
+		 *	 when ./RCS/foo,v is a regulat file (e.g., a
+		 *	 directory), the RCS tools ignore the ./foo.v file.
+		 *
+		 * The first call to scan_rcsdir() will scan the RCS
+		 * sub-directory for ,v files.  The second call to
+		 * scan_rcsdir() will ,v files not previously found
+		 * in the RCS sub-directory.  If either (or both)
+		 * contain locks, ret will be TRUE.
+		 */
+		dbg(5, "RCS directory found: %s", modarg);
+		scan_rcsdir(modarg, arg, rflag);
+
+	    /*
+	     * case: arg is a directory without an RCS sub-directory
+	     */
+	    } else {
+		/* just scan the arg directory for ,v files */
+		dbg(5, "only arg directory found: %s", arg);
+		scan_rcsdir(arg, NULL, rflag);
+	    }
+	    free(modarg);
+	}
+
+    /*
+     * case: arg does not end in ,v and is not a directory
+     */
+    } else {
+
+	/*
+	 * case: arg does not end in ,v and RCS sub-dir has a ,v file
+	 */
+	dbg(3, "file arg processing");
+	modarg = pathname_2_rcs(arg);
+	hasrcs = stat(modarg, &rbuf);
+	if (hasrcs >= 0 && S_ISREG(rbuf.st_mode)) {
+	    /* found RCS ,v file, scan it */
+	    dbg(5, "found RCS/*,v file: %s for arg: %s", modarg, arg);
+	    scan_rcsfile(modarg, arg);
+
+	/*
+	 * case: arg does not end in ,v and the RCS ,v exists but is not a file
+	 */
+	} else if (hasrcs >= 0) {
+	    /* ,v is not an regular file, so it is not locked */
+	    dbg(5, "found RCS/*,v non-file: %s for arg: %s", modarg, arg);
+
+	/*
+	 * case: arg does not end in ,v and no RCS ,v
+	 */
+	} else {
+
+	    /*
+	     * case: arg does not end in ,v and no RCS ,v and arg,v is a file
+	     */
+	    free(modarg);
+	    modarg = file_2_filev(arg);
+	    hasrcs = stat(modarg, &rbuf);
+	    if (hasrcs >= 0 && S_ISREG(rbuf.st_mode)) {
+		/* found arg,v file, scan it */
+		dbg(5, "found ./*,v file: %s for arg: %s", modarg, arg);
+		scan_rcsfile(modarg, arg);
+
+	    /*
+	     * case: arg does not end in ,v and no RCS ,v and arg,v not a file
+	     * case: arg does not end in ,v and no RCS ,v and arg,v not exist
+	     */
+	    } else {
+		/* no ,v file (regular or missing), so no lock */
+		dbg(5, "no *,v files found");
+	    }
+	}
+	free(modarg);
+    }
+    return;
+}
+
+
+/*
+ * scan_rcsfile - scan an RCS file for a lock
+ *
+ * NOTE: This function prints lock results as per the -d and -l flags.
+ *
+ * given:
+ *	filename	path/RCS/foo,v filename
+ *	arg		path/foo arg to print if locked,
+ *			    NULL ==> form from filename
+ *
+ * NOTE: If arg is NULL, this function will attempt to form the name to
+ *	 print from the filename.
+ */
+static void
+scan_rcsfile(char *filename, char *arg)
+{
+    struct stat sbuf;	/* file status */
+    int ret;		/* 0 ==> nothing to print, 1 ==> something to print */
+    char resolved[PATH_MAX+1];	/* full pathname of a locked file */
+
+    /*
+     * firewall
+     */
+    /* OK for arg to be NULL */
+    if (filename == NULL) {
+	fatal("scan_rcsfile", "passed NULL ptr", 0);
+	/*NOTREACHED*/
+    }
+    dbg(2, "scanning file: %s", filename);
+
+    /*
+     * see if the RCS file is locked
+     */
+    ret = readrcs(filename, &sbuf);
+    dbg(3, "scan returned: %d", ret);
+
+    /*
+     * print results if locked
+     */
+    if (ret != 0) {
+
+	/* print non-RCS name, compute if needed */
+	if (arg == NULL) {
+
+	    /* deternime non-RCS name */
+	    arg = rcs_2_pathname(filename);
+
+	    /* print full path if -p */
+	    if (pflag) {
+		errno = 0;
+	        if (realpath(arg, resolved) == NULL) {
+		    warn("cannot resolve locked file", arg, errno);
+		    exitcode |= EXIT_MASK_ACCESS;
+		    dbg(7, "exitcode is now %d", exitcode);
+		    printf("%s", arg);
+		} else {
+		    printf("%s", resolved);
+		}
+
+	    /* print just the arg without -p */
+	    } else {
+		printf("%s", arg);
+	    }
+	    free(arg);
+
+	/*
+	 * print non-RCS name
+	 */
+	} else {
+
+	    /* print full path if -p */
+	    if (pflag) {
+		errno = 0;
+	        if (realpath(arg, resolved) == NULL) {
+		    warn("cannot resolve locked file", arg, errno);
+		    exitcode |= EXIT_MASK_ACCESS;
+		    dbg(7, "exitcode is now %d", exitcode);
+		    printf("%s", arg);
+		} else {
+		    printf("%s", resolved);
+		}
+
+	    /* print just the arg without -p */
+	    } else {
+		printf("%s", arg);
+	    }
+	}
+
+	/* if -l, print owner and locked version */
+	if (lflag) {
+	    printf("\t%s\t%s", owner, revision);
+	}
+
+	/* if -d, print RCS mod date */
+	if (dflag) {
+	    printf("\t%s", ctime(&(sbuf.st_mtime)));
+	} else {
+	    putchar('\n');
+	}
+	fflush(stdout);
+    }
+    return;
+}
+
+
+/*
+ * scan_rcsdir - scan a directory for RCS ,v files that may be locked
+ *
+ * given:
+ *	dir1		directory to scan for ,v files
+ *	dir2		if != NULL, ignore dir/,v files also found in subdir
+ *	recurse		1 ==> recurse non-RCS subdirs, 0 ==> don't
+ *
+ * NOTE: This function may update exitcode based on errors.
+ */
+static void
+scan_rcsdir(char *dir1, char *dir2, int recurse)
+{
+    DIR *d;		/* open directory */
+    struct dirent *f;	/* file information for a directory entry */
+    size_t flen;	/* length of filename referenced by f */
+    struct stat fbuf;	/* file status of filename referenced by f */
+    size_t dir1len;	/* length of the dir1 name */
+    size_t dir2len;	/* length of the dir2 name */
+    char *filename;	/* full path to filename referenced by f */
+    int comma_v;	/* 1 ==> ios a ,v filename */
+
+    /*
+     * firewall
+     */
+    /* it is OK if subdir is NULL */
+    if (dir1 == NULL) {
+	fatal("scan_rcsdir", "passed NULL ptr", 0);
+	/*NOTREACHED*/
+    }
+    if (dir2 == NULL) {
+	dbg(5, "scan_rcsdir(%s, NULL) with%s recursion",
+		dir1, (recurse ? "" : "out"));
+    } else {
+	dbg(5, "scan_rcsdir(%s, %s) with%s recursion",
+		dir1, dir2, (recurse ? "" : "out"));
+    }
+
+    /*
+     * open the directory
+     */
+    dbg(9, "about to open directory: %s", dir1);
+    if ((d = opendir(dir1)) == NULL) {
+	/* no a directory, not accessable, etc. */
+	warn("cannot open directory", dir1, errno);
+	exitcode |= EXIT_MASK_ACCESS;
+	dbg(7, "exitcode is now %d", exitcode);
+	return;
+    }
+    dir1len = strlen(dir1);
+
+    /*
+     * we always scan dir1 for ,v files, regardless of subdir
+     */
+    errno = 0;
+    for (f = readdir(d); f != NULL; f = readdir(d)) {
+
+	/*
+	 * determine if we have a ,v file
+	 */
+	if (strendstr(f->d_name, &flen, ",v", NULL) <= 0) {
+	    dbg(9, "2nd dir non-*,v name: %s", f->d_name);
+	    comma_v = 0;
+	} else {
+	    dbg(9, "2nd dir *,v name: %s", f->d_name);
+	    comma_v = 1;
+	}
+
+	/*
+	 * form filename
+	 */
+	filename = malloc(dir1len + 1 + flen + 1);
+	if (filename == NULL) {
+	    fatal("cannot allocate memory", "1", errno);
+	    /*NOTREACHED*/
+	}
+	snprintf(filename, dir1len + 1 + flen + 1, "%s/%s", dir1, f->d_name);
+
+	/*
+	 * ignore if not a regular file that is readable
+	 */
+	if (stat(filename, &fbuf) < 0) {
+	    dbg(9, "ignoring vanished name: %s", filename);
+	    free(filename);
+	    errno = 0;
+	    continue;
+	}
+
+	/*
+	 * if a non-RCS directory and we are recursing, recurse
+	 *
+	 * NOTE: We do not recurse into or under an RCS directory.
+	 *	 We also do not recurse into . and .. directory.
+	 *
+	 * NOTE: If dir2 is non-NULL, then this means dir1 is an
+	 *	 RCS directoy and thus we do not recurse.
+	 */
+	if (rflag && dir2 == NULL && S_ISDIR(fbuf.st_mode) &&
+	    strcmp(f->d_name, "RCS") != 0 &&
+	    strcmp(f->d_name, ".") != 0 &&
+	    strcmp(f->d_name, "..") != 0) {
+	    dbg(9, "recursing on non-RCS dir: %s", filename);
+	    /* recurse on the sub-directory */
+	    process_arg(filename);
+	    dbg(9, "returned after recursion to %s", dir2);
+	    free(filename);
+	    errno = 0;
+	    continue;
+	}
+
+	/*
+	 * not a recursion directory and not a ,v file
+	 */
+	if (comma_v == 0) {
+	    errno = 0;
+	    dbg(9, "ignoring non-*,v name: %s", f->d_name);
+	    continue;
+	}
+
+	/*
+	 * ignore if not a regular file that is readable
+	 */
+	if (!S_ISREG(fbuf.st_mode)) {
+	    dbg(9, "ignorng non-file: %s", filename);
+	    free(filename);
+	    errno = 0;
+	    continue;
+	}
+	if (access(filename, R_OK) != 0) {
+	    dbg(9, "ignoring non-readable file *,v: %s", filename);
+	    free(filename);
+	    errno = 0;
+	    continue;
+	}
+
+	/*
+	 * scan the ,v file for locks and print as needed
+	 */
+	dbg(9, "will scan *,v file: %s", filename);
+	(void) scan_rcsfile(filename, NULL);
+	free(filename);
+	errno = 0;
+    }
+    if (errno != 0) {
+	fatal("readdir error on", dir1, errno);
+    }
+    if (closedir(d) < 0) {
+	/* directory error, stop with what was found */
+	fatal("cannot close directory", dir1, errno);
+	/*NOTREACHED*/
+    }
+    dbg(9, "closed directory: %s", dir1);
+
+    /*
+     * If we were given a 2nd directory, then we need to scan that
+     * directory for ,v files that are not found in the 1st directory.
+     *
+     * A typical example:
+     *
+     *		scan_rcsdir("/foo/bar/RCS", "/foo/bar", recurse);
+     *
+     * We have just scanned /foo/bar/RCS for ,v files.  Now we need
+     * to scan /foo/bar for ,v files not found under /foo/bar/RCS.
+     * The RCS tools will ignore /foo/bar/baz,v if /foo/bar/RCS/baz,v
+     * exists.
+     */
+    if (dir2 != NULL) {
+
+	/*
+	 * open the 2nd directory
+	 */
+	dbg(9, "about to open 2nd directory: %s", dir2);
+	if ((d = opendir(dir2)) == NULL) {
+	    /* no a directory, not accessable, etc. */
+	    warn("cannot open directory", dir2, errno);
+	    exitcode |= EXIT_MASK_ACCESS;
+	    dbg(7, "exitcode is now %d", exitcode);
+	    return;
+	}
+	dir2len = strlen(dir2);
+
+	/*
+	 * scan dir2 for ,v files while looking for them in dir1
+	 *
+	 * NOTE: Yes, somebody could create dir1/foo,v between the time
+	 *	 we finish scanning dir1 and now causing us to skip
+	 *	 dir2/foo,v.  But so what: the RCS tools will skip
+	 *	 dir2/foo,v as well.  All we do is make a best effort
+	 *	 to look for files that are locked when we view them.
+	 */
+	errno = 0;
+	for (f = readdir(d); f != NULL; f = readdir(d)) {
+
+	    /*
+	     * determine if we have a ,v file
+	     */
+	    if (strendstr(f->d_name, &flen, ",v", NULL) <= 0) {
+		dbg(9, "2nd dir non-*,v name: %s", f->d_name);
+		comma_v = 0;
+	    } else {
+		dbg(9, "2nd dir *,v name: %s", f->d_name);
+		comma_v = 1;
+	    }
+
+	    /*
+	     * ignore file foo,v file and dir1/foo,v exists
+	     */
+	    if (comma_v) {
+
+		/*
+		 * form filename as it might exist in dir1
+		 */
+		filename = malloc(dir1len + 1 + flen + 1);
+		if (filename == NULL) {
+		    fatal("cannot allocate memory", "2", errno);
+		    /*NOTREACHED*/
+		}
+		snprintf(filename, dir1len + 1 + flen + 1,
+			 "%s/%s", dir1, f->d_name);
+
+		/*
+		 * ignore ,v file if it exists in dir1
+		 */
+		if (access(filename, F_OK) == 0) {
+		    /* dir1/foo,v exists, ignore dir2/foo,v */
+		    free(filename);
+		    dbg(9, "ignoring in 2nd dir, 1st dir *,v found: %s",
+		    	f->d_name);
+		    errno = 0;
+		    continue;
+		}
+		free(filename);
+		errno = 0;
+	    }
+
+	    /*
+	     * form filename in dir2
+	     */
+	    filename = malloc(dir2len + 1 + flen + 1);
+	    if (filename == NULL) {
+		fatal("cannot allocate memory", "3", errno);
+		/*NOTREACHED*/
+	    }
+	    snprintf(filename, dir2len + 1 + flen + 1,
+		     "%s/%s", dir2, f->d_name);
+
+	    /*
+	     * if a non-RCS directory and we are recursing, recurse
+	     *
+	     * NOTE: We do not recurse into or under an RCS directory.
+	     *	     We also do not recurse into . and .. directory.
+	     */
+	    if (stat(filename, &fbuf) < 0) {
+		dbg(9, "ignoring 2nd dir vanished name: %s", filename);
+		free(filename);
+		errno = 0;
+		continue;
+	    }
+	    if (rflag && S_ISDIR(fbuf.st_mode) &&
+		strcmp(f->d_name, "RCS") != 0 &&
+	        strcmp(f->d_name, ".") != 0 &&
+	        strcmp(f->d_name, "..") != 0) {
+		dbg(9, "recursing on non-RCS dir: %s", filename);
+		/* recurse on the sub-directory */
+		process_arg(filename);
+		dbg(9, "returned after recursion to %s", dir2);
+		free(filename);
+		errno = 0;
+		continue;
+	    }
+
+	    /*
+	     * not a recursion directory and not a ,v file
+	     */
+	    if (comma_v == 0) {
+		dbg(9, "ignoring 2nd dir non-*,v name: %s", f->d_name);
+		errno = 0;
+		continue;
+	    }
+
+	    /*
+	     * ignore if not a regular file that is readable
+	     */
+	    if (!S_ISREG(fbuf.st_mode)) {
+		dbg(9, "ignorng 2nd dir non-file: %s", filename);
+		free(filename);
+		errno = 0;
+		continue;
+	    }
+	    if (access(filename, R_OK) != 0) {
+		dbg(9, "ignoring 2nd dir non-readable file *,v: %s", filename);
+		free(filename);
+		errno = 0;
+		continue;
+	    }
+
+	    /*
+	     * scan the ,v file for locks and print as needed
+	     */
+	    dbg(9, "will scan 2nd dir *,v file: %s", filename);
+	    (void) scan_rcsfile(filename, NULL);
+	    free(filename);
+	    errno = 0;
+	}
+	if (errno != 0) {
+	    fatal("readdir error on", dir2, errno);
+	}
+	if (closedir(d) < 0) {
+	    /* directory error, stop with what was found */
+	    fatal("cannot close directory", dir2, errno);
+	    /*NOTREACHED*/
+	}
+	dbg(9, "closed 2nd directory: %s", dir2);
+    }
+    return;
+}
+
+
+/*
+ * strndup - like strdup() but with a limited copy length
+ */
+static char *
+strndup(const char *s1, const size_t sz)
+{
+    char *s2;
+
+    if ((s2 = malloc((unsigned) sz + 1)) == NULL) {
+	fatal("cannot allocate memory", "4", errno);
+	/*NOTREACHED*/
+    }
+    strncpy(s2, s1, sz);
+    s2[sz] = '\0';
+    return s2;
+}
+
+
+/*
+ * strendstr - determine if a string end matches a string
+ *
+ * given:
+ *	str1	look at the end of this string
+ *	len1p	where to save length of str1 or, NULL ==> don't save length
+ *	str2	potential end string match
+ *	len2p	where to save length of str2 or, NULL ==> don't save length
+ *
+ * returns:
+ *	0 ==> str2 is not at the end of string, str{1,2} empty or NULL
+ *	>0 ==> str2 is at the end of str1, returns str2 length
+ */
+static size_t
+strendstr(char *str1, size_t *len1p, char *str2, size_t *len2p)
+{
+    size_t len1;	/* length of str1 */
+    size_t len2;	/* length of str2 */
+
+    /*
+     * firewall - check for bogus strings
+     */
+    if (str1 == NULL || str2 == NULL) {
+	return 0;
+    }
+
+    /*
+     * get lengths
+     */
+    len1 = strlen(str1);
+    len2 = strlen(str2);
+    /* save lengths if requested */
+    if (len1p != NULL) {
+	*len1p = len1;
+    }
+    if (len2p != NULL) {
+	*len2p = len2;
+    }
+
+    /*
+     * sanity check: str2 cannot be longer than str1
+     */
+    if (len2 > len1) {
+	/* str2 too long to be at end of str1 */
+	return 0;
+    }
+
+    /*
+     * check for end of string match
+     */
+    if (strncmp(str1+len1-len2, str2, len2) == 0) {
+	/* found str2 at end of str2 */
+	return len2;
+    }
+    /* str2 not at end of str1 */
+    return 0;
+}
+
+
+/*
+ * rcs_2_pathname - convert path/RCS/filename,v name into path/filename
+ *
+ * This function will return a path to the regular filename without
+ * any final /RCS (if at end of dirpath) or trailing ,v (if found).
+ *
+ * given:
+ *	rcsname		RCS,v name
+ *
+ * returns:
+ *	malloced pathname without the /RCS or ,v
+ */
+static char *
+rcs_2_pathname(char *rcsname)
+{
+    char *dir;		/* directory path of rcsname */
+    char *base;		/* basename of rcsname */
+    char *real;		/* fill regular filename to return */
+    size_t dirlen;	/* length of dirname */
+    size_t baselen;	/* length of basename */
+
+    /* firewall */
+    if (rcsname == NULL) {
+	fatal("rcs_2_pathname", "passed NULL ptr", 0);
+	/*NOTREACHED*/
+    } else if (rcsname[0] == '\0') {
+	/* empty string returns . by convention */
+	real = strdup(".");
+	if (real == NULL) {
+	    fatal("cannot allocate memory", "5", errno);
+	    /*NOTREACHED*/
+	}
+	dbg(7, "rcs_2_pathname empty string forced return: %s", real);
+	return real;
+    }
+
+    /*
+     * form directory without trailing /RCS
+     */
+    if (strchr(rcsname, '/') == NULL) {
+	/* no / in path, use empty directory component (instead of .) */
+	dirlen = 0;
+	dir = NULL;
+    } else {
+	/* strip off any trailing RCS */
+	dir = dir_name(rcsname);
+	if (strendstr(dir, &dirlen, "RCS", NULL) > 0) {
+	    /* remove trailing RCS */
+	    dirlen -= 3;
+	    dir[dirlen] = '\0';
+	    /* deal with any trailing / */
+	    if (dirlen > 0 && dir[dirlen-1] == '/') {
+	    	--dirlen;
+		dir[dirlen] = '\0';
+	    /* if we had just RCS/file,v, assume empty directory path */
+	    } else if (dir[0] == '\0') {
+		/* as if we had no / in path, use empty directory component */
+		free(dir);
+		dirlen = 0;
+		dir = NULL;
+	    }
+	}
+    }
+
+    /*
+     * form basename without ,v
+     */
+    /* strip off any trailing ,v */
+    base = base_name(rcsname);
+    if (strendstr(base, &baselen, ",v", NULL) > 0) {
+	baselen -= 2;
+	base[baselen] = '\0';
+    }
+    /* if we now have and empty basename, assume "." */
+    if (baselen <= 0) {
+	strcpy(base, ".");
+	baselen = 1;
+    }
+
+    /*
+     * form the fill path of the real filename
+     */
+    if (dirlen <= 0 || dir == NULL) {
+	/* no directory part, just return new base */
+	dbg(11, "rcs_2_pathname path %s: returned: %s", rcsname, base);
+	return base;
+    }
+    /* combine directory and filename */
+    real = malloc(dirlen + 1 + baselen + 1);
+    if (real == NULL) {
+	fatal("cannot allocate memory", "6", errno);
+	/*NOTREACHED*/
+    }
+    snprintf(real, dirlen + 1 + baselen + 1, "%s/%s", dir, base);
+    free(dir);
+    free(base);
+    dbg(11, "rcs_2_pathname path %s: is %s", rcsname, real);
+    return real;
+}
+
+
+/*
+ * dir_2_rcsdir - convert a dirpath into a dirpath/RCS
+ *
+ * given:
+ *	dirname		path to a directory
+ *
+ * returns:
+ *	dirname/RCS as a malloced string
+ */
+static char *
+dir_2_rcsdir(char *dirname)
+{
+    char *rcs = NULL;	/* malloced directory/RCS to return */
+    int dirlen;		/* length of dirname */
+
+    /* firewall */
+    if (dirname == NULL) {
+	fatal("dir_2_rcsdir", "passed NULL ptr", 0);
+	/*NOTREACHED*/
+
+    /* empty dir or just '.' returns RCS by convention */
+    } else if (dirname[0] == '\0' || strcmp(dirname, ".") == 0) {
+	rcs = strdup("RCS");
+	if (rcs == NULL) {
+	    fatal("cannot allocate memory", "7", errno);
+	    /*NOTREACHED*/
+	}
+
+    /* form dirpath/RCS */
+    } else {
+	dirlen = strlen(dirname);
+	rcs = malloc(dirlen + sizeof("/RCS"));
+	if (rcs == NULL) {
+	    fatal("cannot allocate memory", "8", errno);
+	    /*NOTREACHED*/
+	}
+	snprintf(rcs, dirlen + sizeof("/RCS"), "%s/RCS", dirname);
+    }
+
+    /* return malloced dirname/RCS */
+    return rcs;
+}
+
+
+/*
+ * file_2_filev - convert file into a file,v
+ *
+ * given:
+ *	filename	name of a file
+ *
+ * returns:
+ *	filename,v as a malloced string
+ */
+static char *
+file_2_filev(char *filename)
+{
+    char *ret;		/* filename,v to return */
+    int len;		/* filename string length */
+
+    /* firewall */
+    if (filename == NULL) {
+	fatal("file_2_filev", "passed NULL ptr", 0);
+	/*NOTREACHED*/
+    }
+
+    /*
+     * allocate filename,v
+     */
+    len = strlen(filename);
+    ret = malloc(len + sizeof(",v"));
+    if (ret == NULL) {
+	fatal("cannot allocate memory", "9", errno);
+	/*NOTREACHED*/
+    }
+    snprintf(ret, len + sizeof(",v"), "%s,v", filename);
+
+    /* return result */
+    return ret;
+}
+
+
+/*
+ * filev_2_file - convert file,v into a file
+ *
+ * given:
+ *	filename,v	name of a file
+ *
+ * returns:
+ *	filename as a malloced string
+ *
+ * NOTE: If filename does not end in ,v then this function will return
+ *	 the arg, as a newly malloced string, unmodified.
+ */
+static char *
+filev_2_file(char *filename)
+{
+    char *ret;		/* filename,v to return */
+    int len;		/* filename string length */
+
+    /* firewall */
+    if (filename == NULL) {
+	fatal("filev_2_file", "passed NULL ptr", 0);
+	/*NOTREACHED*/
+    }
+
+    /*
+     * allocate filename
+     */
+    ret = strdup(filename);
+    if (ret == NULL) {
+	fatal("cannot allocate memory", "10", errno);
+	/*NOTREACHED*/
+    }
+
+    /*
+     * trim off ,v if found on the end
+     */
+    if (strendstr(ret, &len, ",v", NULL) > 0) {
+	ret[len-2] = '\0';
+    }
+
+    /* return result */
+    return ret;
+}
+
+
+/*
+ * pathname_2_rcs - convert a path/file into path/RCS/file,v RCS name
+ */
+static char *
+pathname_2_rcs(char *pathname)
+{
+    char *base;		/* basename of path */
+    char *basev;	/* basename of path with a trailing ,v */
+    char *dir;		/* directory path of pathname */
+    char *rcsdir;	/* directory path of pathname with a trailing /RCS */
+    char *rcs;		/* malloced path/RCS/file,v to return */
+    int dirlen;		/* length of dirname */
+    int baselen;	/* length of basename */
+
+    /* firewall */
+    if (pathname == NULL) {
+	fatal("pathname_2_rcs", "passed NULL ptr", 0);
+	/*NOTREACHED*/
+    } else if (pathname[0] == '\0') {
+	/* empty string returns RCS by convention */
+	rcs = strdup("RCS");
+	if (rcs == NULL) {
+	    fatal("cannot allocate memory", "11", errno);
+	    /*NOTREACHED*/
+	}
+	return rcs;
+    }
+
+    /*
+     * form directory with trailing /RCS
+     */
+    if (strchr(pathname, '/') == NULL) {
+	/* no / in path, assume directory of just RCS */
+	rcsdir = strdup("RCS");
+	if (rcsdir == NULL) {
+	    fatal("cannot allocate memory", "12", errno);
+	    /*NOTREACHED*/
+	}
+    } else {
+	/* add /RCS */
+	dir = dir_name(pathname);
+	rcsdir = dir_2_rcsdir(dir);
+	free(dir);
+    }
+    dirlen = strlen(rcsdir);
+
+    /*
+     * form basename with ,v
+     */
+    /* get basename */
+    base = base_name(pathname);
+    basev = file_2_filev(base);
+    baselen = strlen(basev);
+    free(base);
+
+    /*
+     * combine dir/RCS and file,v
+     */
+    rcs = malloc(dirlen + 1 + baselen + 1);
+    if (rcs == NULL) {
+	fatal("cannot allocate memory", "13", errno);
+	/*NOTREACHED*/
+    }
+    snprintf(rcs, dirlen + 1 + baselen + 1, "%s/%s", rcsdir, basev);
+    free(rcsdir);
+    free(basev);
+
+    /* return result */
+    return rcs;
+}
+
+
+/*
+ * skipblanks - skip until end of whitespace or string
+ *
+ * given:
+ *	cp	string pointer
+ *
+ * returns:
+ *	after whitespace or at end if string
+ */
+static char *
+skipblanks(char *cp)
+{
+    while (isspace(*cp))
+	cp++;
+    return cp;
+}
+
+
+/*
+ * check_rcs_hdr - sanity check on RCS header parsing
+ *
+ * given:
+ *	p	pointer into the RCS header, or NULL
+ *	msg	warning message to print if a problem (1st arg to warn())
+ *	fname	warning filename (2nd arg to warn())
+ *	end_rcs_header	end of RCS header buffer
+ *
+ * returns:
+ *	-1	pointer is not in buffer or beyond end of buffer
+ *	0	all is OK
+ */
+static int
+check_rcs_hdr(char *p, char *msg, char *fname, char *end_rcs_header)
+{
+    if (p == NULL || p > end_rcs_header) {
+	warn(msg, fname, 0);
+	return -1;
+    }
+    return 0;
+}
+
+
+/*
+ * readrcs - read an RCS,v file and determine if it is locked
+ *
+ * given:
+ *	f	name of RCS,v file
+ *	statPtr	pointer to a struct stat
+ *
+ * returns:
+ *	0 ==> not locked or unable to determine if is locked or not an RCS file
+ *	1 ==> looks like an RCS,v file and is locked
+ *
+ * NOTE: This function was originally written by Kipp Hickman,
+ *	 code cleanup and file closing by Landon Curt Noll.
+ *
+ * NOTE: This functoin may modify exitcode according to locks found and
+ *	 access errors.
+ */
+static int
+readrcs(char *f, struct stat *statPtr)
+{
+    char *end_rcs_header;
+    char *fname;
+    int fd = -1;
+    char *owner_str, *revision_str;
+    char *buf = (char *) (-1), *p, *q;
+    char *lockp;
+
+    /*
+     * map the RCS file into memory
+     */
+    fname = f;
+    dbg(5, "read RCS on: %s", f);
+    if ((fd = open(fname, O_RDONLY)) < 0) {
+	warn("cannot open RCS file", fname, errno);
+	exitcode |= EXIT_MASK_ACCESS;
+	dbg(7, "exitcode is now %d", exitcode);
+	return 0;
+    }
+    if (fstat(fd, statPtr) < 0) {
+	warn("cannot stat RCS file", fname, errno);
+	close(fd);
+	exitcode |= EXIT_MASK_ACCESS;
+	dbg(7, "exitcode is now %d", exitcode);
+	return 0;
+    }
+    if (statPtr->st_size == 0) {
+	warn("zero length RCS file", fname, 0);
+	close(fd);
+	exitcode |= EXIT_MASK_ACCESS;
+	dbg(7, "exitcode is now %d", exitcode);
+	return 0;
+    }
+    buf = (char *) mmap((void *) 0, statPtr->st_size, PROT_READ | PROT_WRITE,
+		        MAP_PRIVATE, fd, 0);
+    if (buf == (char *) (-1)) {
+	warn("cannot mmap RCS file", fname, 0);
+	close(fd);
+	exitcode |= EXIT_MASK_ACCESS;
+	dbg(7, "exitcode is now %d", exitcode);
+	return 0;
+    }
+
+    /*
+     * RCS sanity check, must start a head string
+     */
+    if (strncmp(buf, "head", sizeof("head") - 1) != 0) {
+	warn("malformed RCS file, missing head", fname, 0);
+	close(fd);
+	exitcode |= EXIT_MASK_ACCESS;
+	dbg(7, "exitcode is now %d", exitcode);
+	return 0;
+    }
+
+    /*
+     * RCS scanity check: must have a desc section
+     *
+     * The strstr calls presume that there is at least one nul character
+     * following all the valid data.  The mmap gives us this, except in
+     * the case that the mapped file ends exactly on a page boundary.
+     * In that case we overwrite the last character in the file with a nul.
+     *
+     * This slight disregard for the file's data is actually user visible:
+     * Truncate an RCS ,v file so that it ends with "\ndesc\n".  If the file
+     * is any size other than a page multiple, this code will think the header
+     * is fine, ignore the truncation, and find what it wants.  If the file
+     * happens to end up an exact page multiple, this code will write a nul
+     * over the final "\n", then be unable to find end_rcs_header, and complain
+     * that the file has "no desc line".  Who cares ...
+     */
+    if ((statPtr->st_size % getpagesize()) == 0)
+	buf[statPtr->st_size - 1] = '\0';
+
+    if ((end_rcs_header = strstr(buf, "\ndesc\n")) == NULL) {
+	warn("malformed RCS file, no desc section", fname, 0);
+	close(fd);
+	return 0;
+    }
+
+    /*
+     * RCS sanity check: inspect the head section is more detail
+     */
+    p = buf + sizeof("head") - 1;
+    p = skipblanks(p);
+    if (check_rcs_hdr(p, "malformed RCS file, invalid head line",
+    		      fname, end_rcs_header)) {
+	close(fd);
+	exitcode |= EXIT_MASK_ACCESS;
+	dbg(7, "exitcode is now %d", exitcode);
+	return 0;
+    }
+    q = strchr(p, ';');
+    if (check_rcs_hdr(q, "malformed RCS file, invalid head format",
+    		      fname, end_rcs_header)) {
+	close(fd);
+	exitcode |= EXIT_MASK_ACCESS;
+	dbg(7, "exitcode is now %d", exitcode);
+	return 0;
+    }
+
+    /*
+     * RCS sanity check: inspect the locks section
+     */
+    p = strstr(p, "\nlocks");
+    if (check_rcs_hdr(p, "malformed RCS file, missing locks section",
+    		      fname, end_rcs_header)) {
+	close(fd);
+	exitcode |= EXIT_MASK_ACCESS;
+	dbg(7, "exitcode is now %d", exitcode);
+	return 0;
+    }
+    p += sizeof("\nlocks") - 1;
+    p = skipblanks(p);
+    if (check_rcs_hdr(p, "malformed RCS file, invalid locks section",
+    		      fname, end_rcs_header)) {
+	close(fd);
+	exitcode |= EXIT_MASK_ACCESS;
+	dbg(7, "exitcode is now %d", exitcode);
+	return 0;
+    }
+    q = strchr(p, ';');
+    if (check_rcs_hdr(q, "malformed RCS file, invalid locks format",
+    		      fname, end_rcs_header)) {
+	close(fd);
+	exitcode |= EXIT_MASK_ACCESS;
+	dbg(7, "exitcode is now %d", exitcode);
+	return 0;
+    }
+
+    /*
+     * grab a copy of the the locks section
+     */
+    lockp = strndup(p, q - p);
+    if (buf != (char *) (-1)) {
+	if (munmap(buf, statPtr->st_size) < 0) {
+	    fatal("cannot munmap", fname, 0);
+	    /*NOTREACHED*/
+	}
+    }
+
+    /*
+     * looks like an RCS,v file that is locked - gather lock info
+     *
+     * If there is no owner or RCS lock version, then the file is
+     * not locked.
+     */
+    owner[0] = 0;
+    revision[0] = 0;
+    owner_str = strtok(lockp, ":");
+    if (owner_str != NULL) {
+	revision_str = strtok(NULL, ";\n\t");
+    }
+    if (owner_str == NULL || revision_str == NULL) {
+	close(fd);
+	/* not RCS locked */
+	dbg(5, "unlocked RCS file: %s", f);
+	return 0;
+    }
+
+    /*
+     * save owner and revision in the global area
+     */
+    strncpy(owner, owner_str, sizeof(owner));
+    strncpy(revision, revision_str, sizeof(revision));
+    owner[sizeof(owner) - 1] = 0;
+    revision[sizeof(revision) - 1] = 0;
+
+    /*
+     * report that the RCS,v file is locked
+     */
+    close(fd);
+    exitcode |= EXIT_MASK_LOCK;
+    dbg(7, "exitcode is now %d", exitcode);
+    dbg(5, "locked RCS file: %s", f);
+    return 1;
+}
+
+
+/*
+ * base_name - return a malloced basename of a string
+ *
+ * given:
+ *	path	a string
+ *
+ * returns:
+ *	malloced basename of path
+ *
+ * NOTE: The path argument is not modified by this call whereas
+ *	 calling basename() direcly does.
+ *
+ * NOTE: This function does not return on error and will not return NULL.
+ */
+static char *
+base_name(char *path)
+{
+    char *path_dup;	/* copy of the path argument */
+    char *base;		/* basename of path_dup */
+    char *ret;		/* allocated basename to return */
+
+    /*
+     * firewall
+     */
+    if (path == NULL) {
+	fatal("base_name", "passed NULL ptr", 0);
+	/*NOTREACHED*/
+    }
+
+    /*
+     * duplicate path so that basename() wiil not modify the path argument
+     */
+    errno = 0;
+    path_dup = strdup(path);
+    if (path_dup == NULL) {
+	fatal("string duplication failure", "14", errno);
+	/*NOTREACHED*/
+    }
+
+    /*
+     * compute basename
+     */
+    errno = 0;
+    base = basename(path_dup);
+    if (base == NULL) {
+	fatal("basename returned NULL", "15", errno);
+	/*NOTREACHED*/
+    }
+
+    /*
+     * duplicate basename to return
+     */
+    errno = 0;
+    ret = strdup(base);
+    if (ret == NULL) {
+	fatal("basename duplication failure", "16", errno);
+	/*NOTREACHED*/
+    }
+    free(path_dup);
+    return ret;
+}
+
+
+/*
+ * dir_name - return a malloced dirname of a string
+ *
+ * given:
+ *	path	a string
+ *
+ * returns:
+ *	malloced dirname of path
+ *
+ * NOTE: The path argument is not modified by this call whereas
+ *	 calling dirname() direcly does.
+ *
+ * NOTE: This function does not return on error and will not return NULL.
+ */
+static char *
+dir_name(char *path)
+{
+    char *path_dup;	/* copy of the path argument */
+    char *dir;		/* dirname of path_dup */
+    char *ret;		/* allocated dirname to return */
+
+    /*
+     * firewall
+     */
+    if (path == NULL) {
+	fatal("dir_name", "passed NULL ptr", 0);
+	/*NOTREACHED*/
+    }
+
+    /*
+     * duplicate path so that dirname() wiil not modify the path argument
+     */
+    errno = 0;
+    path_dup = strdup(path);
+    if (path_dup == NULL) {
+	fatal("string duplication failure", "17", errno);
+	/*NOTREACHED*/
+    }
+
+    /*
+     * compute dirname
+     */
+    errno = 0;
+    dir = dirname(path_dup);
+    if (dir == NULL) {
+	fatal("dirname returned NULL", "18", errno);
+	/*NOTREACHED*/
+    }
+
+    /*
+     * duplicate dirname to return
+     */
+    errno = 0;
+    ret = strdup(dir);
+    if (ret == NULL) {
+	fatal("dirname duplication failure", "19", errno);
+	/*NOTREACHED*/
+    }
+    free(path_dup);
+    return ret;
+}
+
+
+/*
+ * dbg - debugging output if -v level is high enough
+ */
+static void
+dbg(int level, char *fmt, ...)
+{
+    va_list ap;		/* argument pointer */
+
+    /*
+     * firewall
+     */
+    if (fmt == NULL) {
+	fmt = "((NULL fmt given to dbg!!!))";
+    }
+
+    /*
+     * do nothing if level is too low
+     */
+    if (level > vflag) {
+	return;
+    }
+
+    /*
+     * print debugging to stdout
+     */
+    va_start(ap, fmt);
+    fprintf(stderr, "Debug[%d]: ", level);
+    vfprintf(stderr, fmt, ap);
+    va_end(ap);
+    fputc('\n', stderr);
+    return;
+}
+
+
+/*
+ * warn - issue a warning and return
+ *
+ * given:
+ *	warn1	1st warning string
+ *	warn2	2nd warning string or NULL
+ *	err	error number or 0 ==> not an error
+ */
+static void
+warn(char *warn1, char *warn2, int err)
+{
+    /* firewall */
+    if (warn1 == NULL) {
+	warn1 = "<<NULL 1st arg passed to warn!!>>";
+    }
+
+    /* print without errno msg */
+    if (err == 0) {
+	if (warn2 == NULL) {
+	    fprintf(stderr, "%s: %s\n", program, warn1);
+	} else {
+	    fprintf(stderr, "%s: %s: %s\n", program, warn1, warn2);
+	}
+
+    /* print with errno msg */
+    } else {
+	if (warn2 == NULL) {
+	    fprintf(stderr, "%s: %s: %s\n", program, warn1, strerror(err));
+	} else {
+	    fprintf(stderr, "%s: %s: %s: %s\n",
+	    	    program, warn1, warn2, strerror(err));
+	}
+    }
+    return;
+}
+
+
+/*
+ * fatal - issue a fatal error and exit
+ *
+ * given:
+ *	msg1	1st error string
+ *	msg2	2nd error string or NULL
+ *	err	error number or 0 ==> not an error
+ *
+ * NOTE: This function changes exitcode to EXIT_FATAL for obvious reasons.
+ */
+static void
+fatal(char *msg1, char *msg2, int err)
+{
+    /* firewall */
+    if (msg1 == NULL) {
+	msg1 = "<<NULL 1st arg passed to msg!!>>";
+    }
+
+    /* print without errno msg */
+    if (err == 0) {
+	if (msg2 == NULL) {
+	    fprintf(stderr, "%s: Fatal error: %s\n", program, msg1);
+	} else {
+	    fprintf(stderr, "%s: Fatal error: %s: %s\n", program, msg1, msg2);
+	}
+
+    /* print with errno msg */
+    } else {
+	if (msg2 == NULL) {
+	    fprintf(stderr, "%s: Fatal error: %s: %s\n",
+	    	    program, msg1, strerror(err));
+	} else {
+	    fprintf(stderr, "%s: Fatal error: %s: %s: %s\n",
+	    	    program, msg1, msg2, strerror(err));
+	}
+    }
+    exitcode = EXIT_FATAL;
+    dbg(7, "exitcode is now %d", exitcode);
+    dbg(1, "exit(%d)", exitcode);
+    exit(exitcode);
 }
