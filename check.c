@@ -1,8 +1,8 @@
 /*
  * check - check on checked out RCS files
  *
- * @(#) $Revision: 1.4 $
- * @(#) $Id: check.c,v 1.4 2003/09/17 05:24:26 chongo Exp chongo $
+ * @(#) $Revision: 3.1 $
+ * @(#) $Id: check.c,v 3.1 2007/03/17 12:24:20 chongo Exp chongo $
  * @(#) $Source: /usr/local/src/cmd/check/RCS/check.c,v $
  *
  * Please do not copyright this code.  This code is in the public domain.
@@ -15,10 +15,11 @@
  * OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
  *
- * There was an old version of this code that was written by: Kipp Hickman
- * The many bug fixes, many security fixes, major code cleanup / rewrite,
- * the change of -l to prints lock info (not filenames), the other flags
- * were all performed by:
+ * Long agp, there was an old version of this code that was written by Kipp Hickman.
+ *
+ * The many bug fixes, the many security fixes, the major code cleanup / rewrite,
+ * the change of -l to prints lock info (not filenames), and rest of the flags
+ * were all added / coded by:
  *
  * 	chongo (Landon Curt Noll) /\oo/\
  * 	http://www.isthe.com/chongo/index.html
@@ -109,7 +110,7 @@ main(int argc, char *argv[])
     program = argv[0];
     prog = base_name(program);
     if (prog[0] == 'r') {
-	/* if progrsam starts with r, assume -r -p */
+	/* if our program basename starts with r, then assume -p -r */
 	pflag = 1;
 	rflag = 1;
     }
@@ -137,11 +138,11 @@ main(int argc, char *argv[])
 	    fprintf(stderr,
 	    	"usage: %s [-d] [-h] [-l] [-p] [-r] [-v level] [path ...]\n"
 		"\n"
-		"\t-d\t\tprint RCS mod date\n"
-		"\t-h\t\tprint help and exit\n"
+		"\t-d\t\tprint RCS modifcation timestamp\n"
+		"\t-h\t\tprint help and exit 0\n"
 		"\t-l\t\tprint RCS lock information\n"
-		"\t-p\t\tprint resolved absolute paths\n"
-		"\t-r\t\trecursive search (except under RCS)\n"
+		"\t-p\t\tprint resolved absolute paths (implied by rcheck)\n"
+		"\t-r\t\trecursive search (except under RCS) (implied by rcheck)\n"
 		"\t-v level\tdebugging level\n"
 		"\n"
 		"exit 0 ==> no lock(s) found\n"
@@ -149,7 +150,7 @@ main(int argc, char *argv[])
 		"exit 2 ==> permission or RCS error(s), no lock(s) found\n"
 		"exit 3 ==> permission or RCS error(s), some lock(s) found\n"
 		"exit 4 ==> fatal error\n", program);
-	    dbg(1, "exit(%d)", EXIT_FATAL);
+	    dbg(1, "exit(%d)", hflag ? 0 : EXIT_FATAL);
 	    exit(hflag ? 0 : EXIT_FATAL);
 	}
     }
