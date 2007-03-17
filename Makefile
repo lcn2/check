@@ -2,8 +2,8 @@
 #
 # check - check for checked out RCS files
 #
-# @(#) $Revision: 2.4 $
-# @(#) $Id: Makefile,v 2.4 2007/03/17 09:16:05 chongo Exp chongo $
+# @(#) $Revision: 3.1 $
+# @(#) $Id: Makefile,v 3.1 2007/03/17 12:24:20 chongo Exp chongo $
 # @(#) $Source: /usr/local/src/cmd/check/RCS/Makefile,v $
 #
 # Please do not copyright this code.  This code is in the public domain.
@@ -18,9 +18,9 @@
 
 SHELL = /bin/sh
 DEST = /usr/local/bin
-RM = /bin/rm
-CP = /bin/cp
-CHMOD = /bin/chmod
+RM = rm
+CP = cp
+CHMOD = chmod
 CC = cc
 CFLAGS = -g3 -Wall -W
 
@@ -38,15 +38,15 @@ rcheck: check
 install: all
 	@for i in ${TARGETS}; do \
 	    echo "${RM} -f ${DEST}/$$i"; \
-	    ${RM} -f ${DEST}/$$i; \
+	    ${RM} -f "${DEST}/$$i"; \
 	    echo "${CP} -f $$i ${DEST}"; \
-	    ${CP} -f $$i ${DEST}; \
+	    ${CP} -f "$$i" "${DEST}"; \
 	    echo "${CHMOD} 0555 ${DEST}/$$i"; \
-	    ${CHMOD} 0555 ${DEST}/$$i; \
+	    ${CHMOD} 0555 "${DEST}/$$i"; \
 	done
 
 clean:
 	${RM} -f *.o
 
 clobber: clean
-	${RM} -f check
+	${RM} -f check rcheck
