@@ -2,8 +2,8 @@
 #
 # check - check for checked out RCS files
 #
-# @(#) $Revision: 2.2 $
-# @(#) $Id: Makefile,v 2.2 2005/05/10 16:02:00 chongo Exp chongo $
+# @(#) $Revision: 2.3 $
+# @(#) $Id: Makefile,v 2.3 2007/03/17 09:15:24 chongo Exp chongo $
 # @(#) $Source: /usr/local/src/cmd/check/RCS/Makefile,v $
 #
 # Please do not copyright this code.  This code is in the public domain.
@@ -22,7 +22,7 @@ RM = /bin/rm
 CP = /bin/cp
 CHMOD = /bin/chmod
 CC = cc
-CFLAGS = -O3 -Wall -W -Werror
+CFLAGS = -O3 -Wall -W
 
 TARGETS = check rcheck
 
