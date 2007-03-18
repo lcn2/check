@@ -1,8 +1,8 @@
 /*
  * check - check on checked out RCS files
  *
- * @(#) $Revision: 3.9 $
- * @(#) $Id: check.c,v 3.9 2007/03/18 10:51:22 chongo Exp chongo $
+ * @(#) $Revision: 3.10 $
+ * @(#) $Id: check.c,v 3.10 2007/03/18 11:27:54 chongo Exp chongo $
  * @(#) $Source: /usr/local/src/cmd/check/RCS/check.c,v $
  *
  * Please do not copyright this code.  This code is in the public domain.
@@ -15,7 +15,7 @@
  * OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
  *
- * Long agp, there was an old version of this code that was written
+ * Long ago, there was an old version of this code that was written
  * by Kipp Hickman.
  *
  * The many bug fixes, the many security fixes, the major code cleanup,
@@ -79,7 +79,7 @@ static struct skip *skip = NULL;
  *
  * NOTE: We only set exists to 1 if the mount point exists AND the its device
  *	 number differs from the device number if the dirname.  I.e., only
- *	 if the mountpoint exists and the device number changes while going
+ *	 if the mount point exists and the device number changes while going
  *	 into it.
  *
  * NOTE: This list need not be exhaustive, just enough to avoid taking a
@@ -122,7 +122,7 @@ static int avoid_setup = 0;	/* avoid table has been setup */
  * NOTE: Format errors are reserved for mal-formed ,v files that we can
  *	 read.  Access errors are reserved for not being able to read/access
  *	 files and directories.  Encountering a ,v inode that is not a
- *	 regular file or encounting an RCS inode that is not a directory
+ *	 regular file or encountering an RCS inode that is not a directory
  *	 will not cause exitcode to change.
  */
 #define EXIT_MASK_LOCK		0x01	/* set bit if lock found */
@@ -130,7 +130,7 @@ static int avoid_setup = 0;	/* avoid table has been setup */
 #define EXIT_MASK_DIFF		0x04	/* set bit if file and RCS differ */
 #define EXIT_MASK_ACCESS	0x08	/* set bit if access errors */
 #define EXIT_MASK_RPM		0x10	/* set bit *.rpm{orig,init,save,new} */
-#define EXIT_FATAL		0x20	/* fatal error encounted */
+#define EXIT_FATAL		0x20	/* fatal error encountered */
 static int exitcode = 0;		/* how we will/should exit */
 
 static char *program;		/* our name */
@@ -295,7 +295,7 @@ parse_args(int argc, char **argv)
 	    "\t-r\t\trecursive search (def: don't unless using rcheck)\n"
 	    "\t-R\t\treport on *.rpm{orig,init,save,new} files (def: don't)\n"
 	    "\t-s /dir\t\tskip dirs starting with /dir, sets -p (def: don't)\n"
-	    "\t-t\t\tprint RCS modifcation timestamp (def: don't)\n"
+	    "\t-t\t\tprint RCS modification timestamp (def: don't)\n"
 	    "\t-x\t\tdo not cross filesystems when -r (def: do)\n"
 	    "\t-v level\tdebugging level (def: 0)\n"
 	    "exit 0 ==> all OK\n"
@@ -339,7 +339,7 @@ parse_args(int argc, char **argv)
 	}
     }
     if (tflag) {
-	dbg(1, "-t: print RCS modifcation timestamp");
+	dbg(1, "-t: print RCS modification timestamp");
     }
     if (xflag) {
 	dbg(1, "-x: do not cross filesystems when -r");
@@ -410,11 +410,11 @@ process_arg(char *arg)
 	 * a RCS/foo,v file (even when ./foo,v exists).  If RCS/foo,v
 	 * does not exist, then the RCS tool will look for the foo,v file.
 	 *
-	 * If we are procesing "foo,v" and RCS/foo,v exists but is
+	 * If we are processing "foo,v" and RCS/foo,v exists but is
 	 * not a file, then the RCS tool report an error.  We consider
 	 * foo to not be locked when RCS/foo,v exists and is not a file.
 	 *
-	 * If we are procesing "foo,v" and RCS/foo,v does NOT exist,
+	 * If we are processing "foo,v" and RCS/foo,v does NOT exist,
 	 * then "./foo,v is examined for locking.
 	 */
 	dbg(3, ",v arg processing");
@@ -437,7 +437,7 @@ process_arg(char *arg)
 	    /*
 	     * case: arg ends in ,v and has NO / and RCS has a non-file ,v
 	     *
-	     * NOTE: The RCS tools will ignore arg (an exising ,v file)
+	     * NOTE: The RCS tools will ignore arg (an existing ,v file)
 	     *	     when they discover that the RCS ,v exists but is
 	     *	     not a file.
 	     */
@@ -557,7 +557,7 @@ process_arg(char *arg)
 		 *
 		 * NOTE: If ./foo,v and ./RCS/foo,v both exist, then
 		 *	 the RCS tools only process ./RCS/foo,v.  Even
-		 *	 when ./RCS/foo,v is a regulat file (e.g., a
+		 *	 when ./RCS/foo,v is a regular file (e.g., a
 		 *	 directory), the RCS tools ignore the ./foo.v file.
 		 *
 		 * The first call to scan_rcsdir() will scan the RCS
@@ -675,10 +675,10 @@ scan_rcsfile(char *filename, char *arg)
     }
     dbg(2, "scanning file: %s", filename);
 
-    /* commpte RCS pathname if not already given */
+    /* compute RCS pathname if not already given */
     if (arg == NULL) {
 
-	/* deternime non-RCS name */
+	/* determine non-RCS name */
 	arg = rcs_2_pathname(filename);
 	free_arg = 1;
     }
@@ -824,7 +824,7 @@ scan_rcsdir(char *dir1, char *dir2, int recurse)
     size_t dir1len;	/* length of the dir1 name */
     size_t dir2len;	/* length of the dir2 name */
     char *filename;	/* full path to filename referenced by f */
-    int comma_v;	/* 1 ==> ios a ,v filename */
+    int comma_v;	/* 1 ==> is a ,v filename */
 
     /*
      * firewall
@@ -847,7 +847,7 @@ scan_rcsdir(char *dir1, char *dir2, int recurse)
      */
     dbg(9, "about to open directory: %s", dir1);
     if ((d = opendir(dir1)) == NULL) {
-	/* no a directory, not accessable, etc. */
+	/* no a directory, not accessible, etc. */
 	warn("cannot open directory", dir1, errno);
 	set_exitcode_mask(EXIT_MASK_ACCESS);
 	return;
@@ -919,7 +919,7 @@ scan_rcsdir(char *dir1, char *dir2, int recurse)
 
 	    /* if -l, print fake owner and locked version */
 	    if (lflag) {
-		printf("\t:n/a:\t-1");
+		printf("\t:n/a:\t-2");
 	    }
 
 	    /* if -t, print RCS mod date */
@@ -942,7 +942,7 @@ scan_rcsdir(char *dir1, char *dir2, int recurse)
 	 *	 We also do not recurse into . and .. directory.
 	 *
 	 * NOTE: If dir2 is non-NULL, then this means dir1 is an
-	 *	 RCS directoy and thus we do not recurse.
+	 *	 RCS directory and thus we do not recurse.
 	 */
 	if (rflag && dir2 == NULL && S_ISDIR(fbuf.st_mode)) {
 
@@ -975,7 +975,7 @@ scan_rcsdir(char *dir1, char *dir2, int recurse)
 	 * ignore if not a regular file that is readable
 	 */
 	if (!S_ISREG(fbuf.st_mode)) {
-	    dbg(9, "ignorng non-file: %s", filename);
+	    dbg(9, "ignoring non-file: %s", filename);
 	    free(filename);
 	    errno = 0;
 	    continue;
@@ -1025,7 +1025,7 @@ scan_rcsdir(char *dir1, char *dir2, int recurse)
 	 */
 	dbg(9, "about to open 2nd directory: %s", dir2);
 	if ((d = opendir(dir2)) == NULL) {
-	    /* no a directory, not accessable, etc. */
+	    /* no a directory, not accessible, etc. */
 	    warn("cannot open directory", dir2, errno);
 	    set_exitcode_mask(EXIT_MASK_ACCESS);
 	    return;
@@ -1140,7 +1140,7 @@ scan_rcsdir(char *dir1, char *dir2, int recurse)
 	     * ignore if not a regular file that is readable
 	     */
 	    if (!S_ISREG(fbuf.st_mode)) {
-		dbg(9, "ignorng 2nd dir non-file: %s", filename);
+		dbg(9, "ignoring 2nd dir non-file: %s", filename);
 		free(filename);
 		errno = 0;
 		continue;
@@ -1609,7 +1609,7 @@ check_rcs_hdr(char *p, char *msg, char *fname, char *end_rcs_header)
  * NOTE: This function was originally written by Kipp Hickman,
  *	 code cleanup and file closing by Landon Curt Noll.
  *
- * NOTE: This functoin may modify exitcode according to locks found and
+ * NOTE: This function may modify exitcode according to locks found and
  *	 access errors.
  */
 static int
@@ -1664,18 +1664,18 @@ readrcs(char *f, struct stat *statPtr)
     }
 
     /*
-     * RCS scanity check: must have a desc section
+     * RCS sanity check: must have a desc section
      *
-     * The strstr calls presume that there is at least one nul character
+     * The strstr calls presume that there is at least one NUL character
      * following all the valid data.  The mmap gives us this, except in
      * the case that the mapped file ends exactly on a page boundary.
-     * In that case we overwrite the last character in the file with a nul.
+     * In that case we overwrite the last character in the file with a NUL.
      *
      * This slight disregard for the file's data is actually user visible:
      * Truncate an RCS ,v file so that it ends with "\ndesc\n".  If the file
      * is any size other than a page multiple, this code will think the header
      * is fine, ignore the truncation, and find what it wants.  If the file
-     * happens to end up an exact page multiple, this code will write a nul
+     * happens to end up an exact page multiple, this code will write a NUL
      * over the final "\n", then be unable to find end_rcs_header, and complain
      * that the file has "no desc line".  Who cares ...
      */
@@ -1791,7 +1791,7 @@ readrcs(char *f, struct stat *statPtr)
  *	malloced basename of path
  *
  * NOTE: The path argument is not modified by this call whereas
- *	 calling basename() direcly does.
+ *	 calling basename() directly does.
  *
  * NOTE: This function does not return on error and will not return NULL.
  */
@@ -1811,7 +1811,7 @@ base_name(char *path)
 }
 
 /*
- * duplicate path so that basename() wiil not modify the path argument
+ * duplicate path so that basename() will not modify the path argument
  */
 errno = 0;
 path_dup = strdup(path);
@@ -1854,7 +1854,7 @@ if (path_dup == NULL) {
  *	malloced dirname of path
  *
  * NOTE: The path argument is not modified by this call whereas
- *	 calling dirname() direcly does.
+ *	 calling dirname() directly does.
  *
  * NOTE: This function does not return on error and will not return NULL.
  */
@@ -1874,7 +1874,7 @@ dir_name(char *path)
     }
 
     /*
-     * duplicate path so that dirname() wiil not modify the path argument
+     * duplicate path so that dirname() will not modify the path argument
      */
     errno = 0;
     path_dup = strdup(path);
@@ -1939,7 +1939,7 @@ ok_to_recurse(char *path, char *name, struct stat *sbuf)
 
     /* determine if -x allows us to recurse */
     if (xflag && (sbuf->st_dev != arg_dev)) {
-	dbg(7, "will not recurse into another systetem: %s", path);
+	dbg(7, "will not recurse into another filesystem: %s", path);
 	return 0;
     }
 
@@ -1969,7 +1969,7 @@ ok_to_recurse(char *path, char *name, struct stat *sbuf)
     }
 
     /* do not recurse into paths blocked by -s /dir */
-    if (realpath(path, fullpath) != NULL) {
+    if (skip != NULL && realpath(path, fullpath) != NULL) {
 	for (s=skip; s != NULL; s = s->next) {
 
 	    /* look for leading match */
@@ -1977,8 +1977,8 @@ ok_to_recurse(char *path, char *name, struct stat *sbuf)
 
 		/* do not recurse on exact match or path component match */
 		if (path[s->len] == '\0' || path[s->len] == '/') {
-		    dbg(7, "will not recurse under -s %s: %s",
-		    	s->path, fullpath);
+		    dbg(3, "will not recurse under %s", fullpath);
+		    dbg(3, "\tdue to -s %s", s->path);
 		    return 0;
 		}
 	    }
@@ -2064,7 +2064,7 @@ set_exitcode_mask(int mask)
 
     /* report if changed */
     if (oldexit != exitcode) {
-	dbg(3, "exit mask set %x, exitcode changed from %d to %d",
+	dbg(1, "exit mask set 0x%02x, exitcode changed from %d to %d",
 		mask, oldexit, exitcode);
     }
     return;
