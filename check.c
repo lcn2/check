@@ -1,8 +1,8 @@
 /*
  * check - check on checked out RCS files
  *
- * @(#) $Revision: 3.10 $
- * @(#) $Id: check.c,v 3.10 2007/03/18 11:27:54 chongo Exp chongo $
+ * @(#) $Revision: 3.11 $
+ * @(#) $Id: check.c,v 3.11 2007/03/18 11:44:27 chongo Exp chongo $
  * @(#) $Source: /usr/local/src/cmd/check/RCS/check.c,v $
  *
  * Please do not copyright this code.  This code is in the public domain.
@@ -31,6 +31,7 @@
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <dirent.h>
 #include <string.h>
 #include <stdlib.h>
@@ -169,6 +170,7 @@ main(int argc, char *argv[])
     char *arg;			/* arg being processed */
 
     /* parse args */
+    fclose(stdin);
     parse_args(argc, argv);
     argc -= optind;
     argv += optind;
@@ -215,7 +217,6 @@ parse_args(int argc, char **argv)
 	    cflag = 1;
 	    break;
 	case 'd':
-	    warn("-d", "XXX - code not yet implemented, sorry", 0);
 	    dflag = 1;
 	    break;
 	case 'l':
@@ -664,6 +665,9 @@ scan_rcsfile(char *filename, char *arg)
     int missing;	/* 1 ==> RCS file not checked out */
     int need_nl = 0;	/* 1 ==> need some newline since we printed something */
     int free_arg = 0;	/* 1 ==> we need to free arg because we alloced it */
+    pid_t pid;		/* child pid or 0 ==> is child or -1 ==> error */
+    int code;		/* child exit code */
+    int devnull_fd;	/* /dev/null file descriptor */
 
     /*
      * firewall
@@ -769,6 +773,12 @@ scan_rcsfile(char *filename, char *arg)
      */
     if (mflag && missing) {
 
+	/* force newline if previous output */
+	if (need_nl) {
+	    putchar('\n');
+	    need_nl = 0;
+	}
+
 	/* if -c, print 1-word comment */
 	if (cflag) {
 	    printf("gone\t");
@@ -789,6 +799,103 @@ scan_rcsfile(char *filename, char *arg)
 	    /* ctime string ends in a newline */
 	    need_nl = 0;
 	    fflush(stdout);
+	}
+    }
+
+    /*
+     * determine of file is different from top of RCS if -d
+     */
+    if (dflag && !missing) {
+
+	/* force newline if previous output */
+	if (need_nl) {
+	    putchar('\n');
+	    need_nl = 0;
+	}
+	fflush(stdout);
+
+    	/*
+	 * Use:
+	 *
+	 *	rcsdiff -q arg
+	 *
+	 * If the exit code is 0, there is no difference.  If the
+	 * exit code is non-zero, then the file is different from
+	 * the top RCS revision.
+	 */
+	errno = 0;
+	pid = fork();
+	switch (pid) {
+	case 0:		/* child process */
+	    /* seal off common standard I/O */
+	    devnull_fd = open("/dev/null", 0);
+	    if (devnull_fd < 0) {
+		exit(EXIT_FATAL);	/* /dev/null failure */
+	    }
+	    if (dup2(devnull_fd, 1) < 0) {
+		exit(EXIT_FATAL);	/* dup2(/dev/null, stdout) failure */
+	    }
+	    if (dup2(devnull_fd, 2) < 0) {
+		exit(EXIT_FATAL);	/* dup2(/dev/null, stdout) failure */
+	    }
+
+	    /* launch rcsdiff */
+	    execl("/usr/bin/rcsdiff", "/usr/bin/rcsdiff", "-q", arg, NULL);
+	    exit(EXIT_FATAL);	/* exec faulure */
+	    break;	/* end of child process */
+
+	case -1:	/* fork error */
+	    fatal("rcsdiff fork error", NULL, errno);
+	    /*NOTREADCHED*/
+	    break;
+	}
+
+	/*
+	 * parent process - examine child exit code
+	 */
+	errno = 0;
+        if (waitpid(pid, &code, 0) < 0) {
+	    fatal("waitpid failed", NULL, errno);
+	    /*NOTREACHED*/
+	}
+	if (!WIFEXITED(code)) {
+	    fatal("waitpid returned but child did not exit", NULL, errno);
+	    /*NOTREACHED*/
+	}
+	dbg(9, "exit code %d: rcsdiff -q %s", WEXITSTATUS(code), arg);
+	switch (WEXITSTATUS(code)) {
+	case 0:		/* file is the same */
+	    dbg(9, "file same as RCS: %s", arg);
+	    break;
+
+	case EXIT_FATAL:	/* exec failed */
+	    fatal("exec of rcsdiff failed", NULL, 0);
+	    /*NOTREACHED*/
+	    break;
+
+	default:	/* file is different */
+	    /* if -c, print 1-word comment */
+	    if (cflag) {
+		printf("diff\t");
+	    }
+
+	    /* print different filename */
+	    printf("%s", pflag ? resolved : arg);
+	    need_nl = 1;
+
+	    /* if -l, print fake owner and locked version */
+	    if (lflag) {
+		printf("\t:n/a:\t-3");
+	    }
+
+	    /* if -t, print file mod date */
+	    if (tflag) {
+		printf("\t%s", ctime(&(fbuf.st_mtime)));
+		/* ctime string ends in a newline */
+		need_nl = 0;
+		fflush(stdout);
+	    }
+	    break;
 	}
     }
 
