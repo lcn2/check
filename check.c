@@ -1,8 +1,8 @@
 /*
  * check - check on checked out RCS files
  *
- * @(#) $Revision: 3.6 $
- * @(#) $Id: check.c,v 3.6 2007/03/18 09:01:15 chongo Exp chongo $
+ * @(#) $Revision: 3.7 $
+ * @(#) $Id: check.c,v 3.7 2007/03/18 09:19:27 chongo Exp chongo $
  * @(#) $Source: /usr/local/src/cmd/check/RCS/check.c,v $
  *
  * Please do not copyright this code.  This code is in the public domain.
@@ -62,8 +62,16 @@ static int tflag = 0;		/* print RCS mod date timestamp */
 static int vflag = 0;		/* verbosity level */
 static int xflag = 0;		/* do not cross filesystem when recursing */
 
-/* -r static variables */
+/*
+ * -r mode related static variables
+ */
 static dev_t arg_dev;		/* device number of argument (for -x) */
+struct skip {
+    struct skip *next;	/* next skip string or NULL */
+    char *path;		/* the path to skip */
+    size_t len;		/* length of path */
+};
+static struct skip *skip = NULL;
 
 /*
  * various special devices to avoid that might be found on various systems
@@ -187,6 +195,8 @@ parse_args(int argc, char **argv)
 {
     extern char *optarg;	/* option argument */
     extern int optind;		/* argv index of the next arg */
+    struct skip *s;		/* new skip string */
+    char *skippath;		/* resolved path to skip */
     int i;
 
     program = argv[0];
@@ -202,7 +212,7 @@ parse_args(int argc, char **argv)
 	    cflag = 1;
 	    break;
 	case 'd':
-	    warn("-d", "XXX - code not yet implemented", 0);
+	    warn("-d", "XXX - code not yet implemented, sorry", 0);
 	    dflag = 1;
 	    break;
 	case 'l':
@@ -221,8 +231,37 @@ parse_args(int argc, char **argv)
 	    rflag = 1;
 	    break;
 	case 's':
-	    pflag = 1;	/* -s implies -p */
-	    warn("-s", "XXX - code not yet implemented", 0);
+	    s = malloc(sizeof(struct skip));
+	    if (s == NULL) {
+		fatal("cannot allocate memory", "1", errno);
+		/*NOTREACHED*/
+	    }
+	    skippath = malloc(PATH_MAX+1);
+	    if (skippath == NULL) {
+		fatal("cannot allocate memory", "2", errno);
+		/*NOTREACHED*/
+	    }
+	    if (realpath(optarg, skippath) == NULL) {
+		/* -s /skip does not exist, use only if it starts with / */
+		skippath[0] = '\0';
+		if (optarg[0] == '/') {
+		    strcpy(skippath, optarg);
+		}
+	    }
+	    /* use if we have an absolute skip path */
+	    if (skippath[0] == '/') {
+		s->next = skip;
+		s->path = skippath;
+		s->len = strlen(skippath);
+		skip = s;
+		pflag = 1;	/* -s implies -p */
+	    } else {
+		free(s);
+		free(skippath);
+		fatal(optarg, "if a -s arg does not start with /, "
+			      "then it must exist", 0);
+		/*NOTREACHED*/
+	    }
 	    break;
 	case 't':
 	    tflag = 1;
@@ -238,7 +277,7 @@ parse_args(int argc, char **argv)
 	    /*FALLTHRU*/
 	default:
 	    fprintf(stderr,
-	    "usage: %s [-c] [-d] [-l] [-m] [-p] [-r] [-t] [-x] [-s /skip]...\n"
+	    "usage: %s [-c] [-d] [-l] [-m] [-p] [-r] [-t] [-x] [-s /dir]...\n"
 	    "\t\t[-h][-v level] [path ...]\n"
 	    "\n"
 	    "\t-c\t\tprint 1-word comment before each filename (def: don't)\n"
@@ -249,18 +288,17 @@ parse_args(int argc, char **argv)
 	    "\t-p\t\tprint absolute paths (def: don't unless using rcheck)\n"
 	    "\t-q\t\tdo not report locked filenames (def: do)\n"
 	    "\t-r\t\trecursive search (def: don't unless using rcheck)\n"
-	    "\t-s /skip\tskip paths starting with /skip, sets -p (def: don't)\n"
+	    "\t-s /dir\tskip dirs starting with /dir, sets -p (def: don't)\n"
 	    "\t-t\t\tprint RCS modifcation timestamp (def: don't)\n"
 	    "\t-x\t\tdo not cross filesystems when -r (def: do)\n"
 	    "\t-v level\tdebugging level (def: 0)\n"
 	    "\n"
 	    "exit 0 ==> all OK\n"
+	    "exit 16 ==> fatal error\n"
 	    "\n"
 	    "exit bit 0 ==> found locked file (1,3,5,7,9,11,13,15)\n"
 	    "exit bit 1 ==> found file not checked out (2,3,6,7,10,11,14,15)\n"
-	    "exit bit 2 ==> found file different from top of RCS (8-15)\n"
-	    "\n"
-	    "exit 16 ==> fatal error\n",
+	    "exit bit 2 ==> found file different from top of RCS (8-15)\n",
 	    program);
 	    dbg(1, "exit(%d)", hflag ? 0 : EXIT_FATAL);
 	    exit(hflag ? 0 : EXIT_FATAL);
@@ -288,6 +326,11 @@ parse_args(int argc, char **argv)
     }
     if (rflag) {
 	dbg(1, "-r: recursive search");
+    }
+    if (skip != NULL) {
+    	for (s=skip; s != NULL; s = s->next) {
+	    dbg(1, "-s: skip paths under: %s", s->path);
+	}
     }
     if (tflag) {
 	dbg(1, "-t: print RCS modifcation timestamp");
@@ -827,7 +870,7 @@ scan_rcsdir(char *dir1, char *dir2, int recurse)
 	 */
 	filename = malloc(dir1len + 1 + flen + 1);
 	if (filename == NULL) {
-	    fatal("cannot allocate memory", "1", errno);
+	    fatal("cannot allocate memory", "3", errno);
 	    /*NOTREACHED*/
 	}
 	snprintf(filename, dir1len + 1 + flen + 1, "%s/%s",
@@ -974,7 +1017,7 @@ scan_rcsdir(char *dir1, char *dir2, int recurse)
 		 */
 		filename = malloc(dir1len + 1 + flen + 1);
 		if (filename == NULL) {
-		    fatal("cannot allocate memory", "2", errno);
+		    fatal("cannot allocate memory", "4", errno);
 		    /*NOTREACHED*/
 		}
 		snprintf(filename, dir1len + 1 + flen + 1, "%s/%s",
@@ -1000,7 +1043,7 @@ scan_rcsdir(char *dir1, char *dir2, int recurse)
 	     */
 	    filename = malloc(dir2len + 1 + flen + 1);
 	    if (filename == NULL) {
-		fatal("cannot allocate memory", "3", errno);
+		fatal("cannot allocate memory", "5", errno);
 		/*NOTREACHED*/
 	    }
 	    snprintf(filename, dir2len + 1 + flen + 1, "%s/%s",
@@ -1092,7 +1135,7 @@ strndup(const char *s1, const size_t sz)
     char *s2;
 
     if ((s2 = malloc((unsigned) sz + 1)) == NULL) {
-	fatal("cannot allocate memory", "4", errno);
+	fatal("cannot allocate memory", "6", errno);
 	/*NOTREACHED*/
     }
     strncpy(s2, s1, sz);
@@ -1189,7 +1232,7 @@ rcs_2_pathname(char *rcsname)
 	/* empty string returns . by convention */
 	real = strdup(".");
 	if (real == NULL) {
-	    fatal("cannot allocate memory", "5", errno);
+	    fatal("cannot allocate memory", "7", errno);
 	    /*NOTREACHED*/
 	}
 	dbg(7, "rcs_2_pathname empty string forced return: %s", real);
@@ -1250,7 +1293,7 @@ rcs_2_pathname(char *rcsname)
     /* combine directory and filename */
     real = malloc(dirlen + 1 + baselen + 1);
     if (real == NULL) {
-	fatal("cannot allocate memory", "6", errno);
+	fatal("cannot allocate memory", "8", errno);
 	/*NOTREACHED*/
     }
     snprintf(real, dirlen + 1 + baselen + 1, "%s/%s",
@@ -1286,7 +1329,7 @@ dir_2_rcsdir(char *dirname)
     } else if (dirname[0] == '\0' || strcmp(dirname, ".") == 0) {
 	rcs = strdup("RCS");
 	if (rcs == NULL) {
-	    fatal("cannot allocate memory", "7", errno);
+	    fatal("cannot allocate memory", "9", errno);
 	    /*NOTREACHED*/
 	}
 
@@ -1295,7 +1338,7 @@ dir_2_rcsdir(char *dirname)
 	dirlen = strlen(dirname);
 	rcs = malloc(dirlen + sizeof("/RCS"));
 	if (rcs == NULL) {
-	    fatal("cannot allocate memory", "8", errno);
+	    fatal("cannot allocate memory", "10", errno);
 	    /*NOTREACHED*/
 	}
 	snprintf(rcs, dirlen + sizeof("/RCS"), "%s/RCS",
@@ -1334,7 +1377,7 @@ file_2_filev(char *filename)
     len = strlen(filename);
     ret = malloc(len + sizeof(",v"));
     if (ret == NULL) {
-	fatal("cannot allocate memory", "9", errno);
+	fatal("cannot allocate memory", "11", errno);
 	/*NOTREACHED*/
     }
     snprintf(ret, len + sizeof(",v"), "%s,v", filename);
@@ -1373,7 +1416,7 @@ filev_2_file(char *filename)
      */
     ret = strdup(filename);
     if (ret == NULL) {
-	fatal("cannot allocate memory", "10", errno);
+	fatal("cannot allocate memory", "12", errno);
 	/*NOTREACHED*/
     }
 
@@ -1411,7 +1454,7 @@ pathname_2_rcs(char *pathname)
 	/* empty string returns RCS by convention */
 	rcs = strdup("RCS");
 	if (rcs == NULL) {
-	    fatal("cannot allocate memory", "11", errno);
+	    fatal("cannot allocate memory", "13", errno);
 	    /*NOTREACHED*/
 	}
 	return rcs;
@@ -1424,7 +1467,7 @@ pathname_2_rcs(char *pathname)
 	/* no / in path, assume directory of just RCS */
 	rcsdir = strdup("RCS");
 	if (rcsdir == NULL) {
-	    fatal("cannot allocate memory", "12", errno);
+	    fatal("cannot allocate memory", "14", errno);
 	    /*NOTREACHED*/
 	}
     } else {
@@ -1449,7 +1492,7 @@ pathname_2_rcs(char *pathname)
      */
     rcs = malloc(dirlen + 1 + baselen + 1);
     if (rcs == NULL) {
-	fatal("cannot allocate memory", "13", errno);
+	fatal("cannot allocate memory", "15", errno);
 	/*NOTREACHED*/
     }
     snprintf(rcs, dirlen + 1 + baselen + 1, "%s/%s",
@@ -1726,17 +1769,17 @@ base_name(char *path)
      * firewall
      */
     if (path == NULL) {
-	fatal("base_name", "passed NULL ptr", 0);
-	/*NOTREACHED*/
-    }
+    fatal("base_name", "passed NULL ptr", 0);
+    /*NOTREACHED*/
+}
 
-    /*
-     * duplicate path so that basename() wiil not modify the path argument
-     */
-    errno = 0;
-    path_dup = strdup(path);
-    if (path_dup == NULL) {
-	fatal("string duplication failure", "14", errno);
+/*
+ * duplicate path so that basename() wiil not modify the path argument
+ */
+errno = 0;
+path_dup = strdup(path);
+if (path_dup == NULL) {
+	fatal("cannot allocate memory", "16", errno);
 	/*NOTREACHED*/
     }
 
@@ -1746,7 +1789,7 @@ base_name(char *path)
     errno = 0;
     base = basename(path_dup);
     if (base == NULL) {
-	fatal("basename returned NULL", "15", errno);
+	fatal("cannot allocate memory", "17", errno);
 	/*NOTREACHED*/
     }
 
@@ -1756,7 +1799,7 @@ base_name(char *path)
     errno = 0;
     ret = strdup(base);
     if (ret == NULL) {
-	fatal("basename duplication failure", "16", errno);
+	fatal("cannot allocate memory", "18", errno);
 	/*NOTREACHED*/
     }
     free(path_dup);
@@ -1799,7 +1842,7 @@ dir_name(char *path)
     errno = 0;
     path_dup = strdup(path);
     if (path_dup == NULL) {
-	fatal("string duplication failure", "17", errno);
+	fatal("cannot allocate memory", "19", errno);
 	/*NOTREACHED*/
     }
 
@@ -1809,7 +1852,7 @@ dir_name(char *path)
     errno = 0;
     dir = dirname(path_dup);
     if (dir == NULL) {
-	fatal("dirname returned NULL", "18", errno);
+	fatal("cannot allocate memory", "20", errno);
 	/*NOTREACHED*/
     }
 
@@ -1819,7 +1862,7 @@ dir_name(char *path)
     errno = 0;
     ret = strdup(dir);
     if (ret == NULL) {
-	fatal("dirname duplication failure", "19", errno);
+	fatal("cannot allocate memory", "21", errno);
 	/*NOTREACHED*/
     }
     free(path_dup);
@@ -1835,6 +1878,8 @@ ok_to_recurse(char *path, char *name, struct stat *sbuf)
 {
     struct stat lbuf;	/* stat of a symlink */
     struct avoid *p;	/* avoid table pointer */
+    struct skip *s;	/* skip record */
+    char fullpath[PATH_MAX+1];	/* full path we are recursing into */
 
     /* initialize the mount point avoid table */
     if (avoid_setup == 0) {
@@ -1883,6 +1928,23 @@ ok_to_recurse(char *path, char *name, struct stat *sbuf)
 	if (sbuf->st_dev == p->device) {
 	    dbg(7, "will not recurse under %s: %s", p->path, path);
 	    return 0;
+	}
+    }
+
+    /* do not recurse into paths blocked by -s /dir */
+    if (realpath(path, fullpath) != NULL) {
+	for (s=skip; s != NULL; s = s->next) {
+
+	    /* look for leading match */
+	    if (strncmp(s->path, fullpath, s->len) == 0) {
+
+		/* do not recurse on exact match or path component match */
+		if (path[s->len] == '\0' || path[s->len] == '/') {
+		    dbg(7, "will not recurse under -s %s: %s",
+		    	s->path, fullpath);
+		    return 0;
+		}
+	    }
 	}
     }
 
