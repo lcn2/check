@@ -1,8 +1,8 @@
 /*
  * check - check on checked out RCS files
  *
- * @(#) $Revision: 3.5 $
- * @(#) $Id: check.c,v 3.5 2007/03/18 08:07:43 chongo Exp chongo $
+ * @(#) $Revision: 3.6 $
+ * @(#) $Id: check.c,v 3.6 2007/03/18 09:01:15 chongo Exp chongo $
  * @(#) $Source: /usr/local/src/cmd/check/RCS/check.c,v $
  *
  * Please do not copyright this code.  This code is in the public domain.
@@ -669,10 +669,12 @@ scan_rcsfile(char *filename, char *arg)
 		exitcode |= EXIT_MASK_ACCESS;
 		dbg(7, "exitcode is now %d", exitcode);
 		snprintf(resolved, PATH_MAX+1, "%s/%s",
-			 missing_dir, missing_base);
+			 strcmp(missing_dir, "/") == 0 ? "" : missing_dir,
+			 missing_base);
 	    } else {
 		snprintf(resolved, PATH_MAX+1, "%s/%s",
-			 dir_resolved, missing_base);
+			 strcmp(dir_resolved, "/") == 0 ? "" : dir_resolved,
+			 missing_base);
 	    }
 	    free(missing_base);
 	    free(missing_dir);
@@ -975,8 +977,8 @@ scan_rcsdir(char *dir1, char *dir2, int recurse)
 		    fatal("cannot allocate memory", "2", errno);
 		    /*NOTREACHED*/
 		}
-		snprintf(filename, dir1len + 1 + flen + 1,
-			 "%s/%s", dir1, f->d_name);
+		snprintf(filename, dir1len + 1 + flen + 1, "%s/%s",
+			 strcmp(dir1, "/") == 0 ? "" : dir1, f->d_name);
 
 		/*
 		 * ignore ,v file if it exists in dir1
@@ -1001,8 +1003,8 @@ scan_rcsdir(char *dir1, char *dir2, int recurse)
 		fatal("cannot allocate memory", "3", errno);
 		/*NOTREACHED*/
 	    }
-	    snprintf(filename, dir2len + 1 + flen + 1,
-		     "%s/%s", dir2, f->d_name);
+	    snprintf(filename, dir2len + 1 + flen + 1, "%s/%s",
+		     strcmp(dir2, "/") == 0 ? "" : dir2, f->d_name);
 
 	    /*
 	     * if a non-RCS directory and we are recursing, recurse
@@ -1251,7 +1253,8 @@ rcs_2_pathname(char *rcsname)
 	fatal("cannot allocate memory", "6", errno);
 	/*NOTREACHED*/
     }
-    snprintf(real, dirlen + 1 + baselen + 1, "%s/%s", dir, base);
+    snprintf(real, dirlen + 1 + baselen + 1, "%s/%s",
+	    strcmp(dir, "/") == 0 ? "" : dir, base);
     free(dir);
     free(base);
     dbg(11, "rcs_2_pathname path %s: is %s", rcsname, real);
@@ -1295,7 +1298,8 @@ dir_2_rcsdir(char *dirname)
 	    fatal("cannot allocate memory", "8", errno);
 	    /*NOTREACHED*/
 	}
-	snprintf(rcs, dirlen + sizeof("/RCS"), "%s/RCS", dirname);
+	snprintf(rcs, dirlen + sizeof("/RCS"), "%s/RCS",
+	    strcmp(dirname, "/") == 0 ? "" : dirname);
     }
 
     /* return malloced dirname/RCS */
@@ -1448,7 +1452,8 @@ pathname_2_rcs(char *pathname)
 	fatal("cannot allocate memory", "13", errno);
 	/*NOTREACHED*/
     }
-    snprintf(rcs, dirlen + 1 + baselen + 1, "%s/%s", rcsdir, basev);
+    snprintf(rcs, dirlen + 1 + baselen + 1, "%s/%s",
+	    strcmp(rcsdir, "/") == 0 ? "" : rcsdir, basev);
     free(rcsdir);
     free(basev);
 
