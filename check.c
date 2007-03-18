@@ -1,8 +1,8 @@
 /*
  * check - check on checked out RCS files
  *
- * @(#) $Revision: 3.11 $
- * @(#) $Id: check.c,v 3.11 2007/03/18 11:44:27 chongo Exp chongo $
+ * @(#) $Revision: 4.1 $
+ * @(#) $Id: check.c,v 4.1 2007/03/18 12:28:39 chongo Exp chongo $
  * @(#) $Source: /usr/local/src/cmd/check/RCS/check.c,v $
  *
  * Please do not copyright this code.  This code is in the public domain.
@@ -926,7 +926,7 @@ scan_rcsdir(char *dir1, char *dir2, int recurse)
 {
     DIR *d;		/* open directory */
     struct dirent *f;	/* file information for a directory entry */
-    size_t flen;	/* length of filename referenced by f */
+    size_t flen = 0;	/* length of filename referenced by f */
     struct stat fbuf;	/* file status of filename referenced by f */
     size_t dir1len;	/* length of the dir1 name */
     size_t dir2len;	/* length of the dir2 name */
@@ -1376,8 +1376,8 @@ rcs_2_pathname(char *rcsname)
     char *dir;		/* directory path of rcsname */
     char *base;		/* basename of rcsname */
     char *real;		/* fill regular filename to return */
-    size_t dirlen;	/* length of dirname */
-    size_t baselen;	/* length of basename */
+    size_t dirlen = 0;	/* length of dirname */
+    size_t baselen = 0;	/* length of basename */
 
     /* firewall */
     if (rcsname == NULL) {
@@ -1399,7 +1399,6 @@ rcs_2_pathname(char *rcsname)
      */
     if (strchr(rcsname, '/') == NULL) {
 	/* no / in path, use empty directory component (instead of .) */
-	dirlen = 0;
 	dir = NULL;
     } else {
 	/* strip off any trailing RCS */
@@ -1558,7 +1557,7 @@ static char *
 filev_2_file(char *filename)
 {
     char *ret;		/* filename,v to return */
-    int len;		/* filename string length */
+    size_t len;		/* filename string length */
 
     /* firewall */
     if (filename == NULL) {
