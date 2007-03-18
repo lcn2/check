@@ -1,8 +1,8 @@
 /*
  * check - check on checked out RCS files
  *
- * @(#) $Revision: 4.1 $
- * @(#) $Id: check.c,v 4.1 2007/03/18 12:28:39 chongo Exp chongo $
+ * @(#) $Revision: 4.2 $
+ * @(#) $Id: check.c,v 4.2 2007/03/18 13:16:06 chongo Exp chongo $
  * @(#) $Source: /usr/local/src/cmd/check/RCS/check.c,v $
  *
  * Please do not copyright this code.  This code is in the public domain.
@@ -53,6 +53,7 @@ static char owner[MAX_OWNER_LEN+1];	/* owner of file co'd */
 static char revision[MAX_REVIS_LEN+1];	/* revision of file co'd */
 static int cflag = 0;		/* print 1 word comment before filenames */
 static int dflag = 0;		/* note when file and RCS differ */
+static int eflag = 0;		/* report files that are under RCS */
 static int hflag = 0;		/* print help and exit */
 static int lflag = 0;		/* print RCS lock info */
 static int mflag = 0;		/* report missing files under RCS */
@@ -211,13 +212,16 @@ parse_args(int argc, char **argv)
 	pflag = 1;
 	rflag = 1;
     }
-    while ((i = getopt(argc, argv, "cdlmpqrRs:tv:xh")) != -1) {
+    while ((i = getopt(argc, argv, "cdelmpqrRs:tv:xh")) != -1) {
 	switch (i) {
 	case 'c':
 	    cflag = 1;
 	    break;
 	case 'd':
 	    dflag = 1;
+	    break;
+	case 'e':
+	    eflag = 1;
 	    break;
 	case 'l':
 	    lflag = 1;
@@ -284,10 +288,11 @@ parse_args(int argc, char **argv)
 	    /*FALLTHRU*/
 	default:
 	    fprintf(stderr,
-	"usage: %s [-c] [-d] [-l] [-m] [-p] [-r] [-R] [-t] [-x] [-s /dir]...\n"
+	"usage: %s [-c] [-d] [-e] [-l] [-m] [-p] [-r] [-R] [-s /dir]... [-t] [-x]\n"
 	    "\t\t[-h] [-v level] [path ...]\n"
 	    "\t-c\t\tprint 1-word comment before each filename (def: don't)\n"
 	    "\t-d\t\tnote when file and RCS differ (def: don't)\n"
+	    "\t-e\t\treport files that are under RCS control (def: don't)\n"
 	    "\t-h\t\tprint help and exit 0 (def: don't)\n"
 	    "\t-l\t\tprint RCS lock information (def: don't)\n"
 	    "\t-m\t\treport missing files under RCS control (def: don't)\n"
@@ -896,6 +901,40 @@ scan_rcsfile(char *filename, char *arg)
 		fflush(stdout);
 	    }
 	    break;
+	}
+    }
+
+    /*
+     * report file under RCS if -e
+     */
+    if (eflag) {
+
+	/* force newline if previous output */
+	if (need_nl) {
+	    putchar('\n');
+	    need_nl = 0;
+	}
+
+	/* if -c, print 1-word comment */
+	if (cflag) {
+	    printf("rcs\t");
+	}
+
+	/* print missing filename */
+	printf("%s", pflag ? resolved : arg);
+	need_nl = 1;
+
+	/* if -l, print fake owner and locked version */
+	if (lflag) {
+	    printf("\t:n/a:\t-4");
+	}
+
+	/* if -t, print RCS mod date */
+	if (tflag) {
+	    printf("\t%s", ctime(&(sbuf.st_mtime)));
+	    /* ctime string ends in a newline */
+	    need_nl = 0;
+	    fflush(stdout);
 	}
     }
 
