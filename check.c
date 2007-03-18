@@ -1,8 +1,8 @@
 /*
  * check - check on checked out RCS files
  *
- * @(#) $Revision: 3.7 $
- * @(#) $Id: check.c,v 3.7 2007/03/18 09:19:27 chongo Exp chongo $
+ * @(#) $Revision: 3.9 $
+ * @(#) $Id: check.c,v 3.9 2007/03/18 10:51:22 chongo Exp chongo $
  * @(#) $Source: /usr/local/src/cmd/check/RCS/check.c,v $
  *
  * Please do not copyright this code.  This code is in the public domain.
@@ -58,7 +58,7 @@ static int mflag = 0;		/* report missing files under RCS */
 static int pflag = 0;		/* print the real path of a file */
 static int qflag = 0;		/* do not report locked filenames */
 static int rflag = 0;		/* recursive search for checked files */
-static int Rflag = 0;		/* report on .rpm{orig,init,save,new} files */
+static int Rflag = 0;		/* report on *.rpm{orig,init,save,new} files */
 static int tflag = 0;		/* print RCS mod date timestamp */
 static int vflag = 0;		/* verbosity level */
 static int xflag = 0;		/* do not cross filesystem when recursing */
@@ -129,7 +129,7 @@ static int avoid_setup = 0;	/* avoid table has been setup */
 #define EXIT_MASK_MISSING	0x02	/* set bit if RCS missing file */
 #define EXIT_MASK_DIFF		0x04	/* set bit if file and RCS differ */
 #define EXIT_MASK_ACCESS	0x08	/* set bit if access errors */
-#define EXIT_MASK_RPM		0x10	/* set bit .rpm{orig,init,save,new} */
+#define EXIT_MASK_RPM		0x10	/* set bit *.rpm{orig,init,save,new} */
 #define EXIT_FATAL		0x20	/* fatal error encounted */
 static int exitcode = 0;		/* how we will/should exit */
 
@@ -293,7 +293,7 @@ parse_args(int argc, char **argv)
 	    "\t-p\t\tprint absolute paths (def: don't unless using rcheck)\n"
 	    "\t-q\t\tdo not report locked filenames (def: do)\n"
 	    "\t-r\t\trecursive search (def: don't unless using rcheck)\n"
-	    "\t-R\t\treport on .rpm{orig,init,save,new} files (def: don't)\n"
+	    "\t-R\t\treport on *.rpm{orig,init,save,new} files (def: don't)\n"
 	    "\t-s /dir\t\tskip dirs starting with /dir, sets -p (def: don't)\n"
 	    "\t-t\t\tprint RCS modifcation timestamp (def: don't)\n"
 	    "\t-x\t\tdo not cross filesystems when -r (def: do)\n"
@@ -304,7 +304,7 @@ parse_args(int argc, char **argv)
 	    "exit bit 1 ==> -m & file not checked out (2-3, 6-7, 10-11, 14-15,\n"
 	    "                                          18-19, 22-23, 26-27, 30-31)\n"
 	    "exit bit 2 ==> -d and file different from RCS (8-15, 24-31)\n"
-	    "exit bit 3 ==> -R and .rpm{orig,init,save,new} found (16-31)\n"
+	    "exit bit 3 ==> -R and *.rpm{orig,init,save,new} found (16-31)\n"
 	    "exit 32 ==> fatal error\n",
 	    program);
 	    dbg(1, "exit(%d)", hflag ? 0 : EXIT_FATAL);
@@ -640,7 +640,7 @@ process_arg(char *arg)
  * This function prints lock results as per the -d and -l flags.
  *
  * If -m was given, missing files are reported if they are locked or not.
- * Unlocked missing files with -l report the locking user as :gone:
+ * Unlocked missing files with -l report the locking user as :n/a:
  * and the revision as -1.
  *
  * If -q, then locked files are not reported, unless -m is also given
@@ -740,7 +740,7 @@ scan_rcsfile(char *filename, char *arg)
 
 	    /* if -c, print 1-word comment */
 	    if (cflag) {
-		printf("locked%s\t", missing ? "-gone" : "");
+		printf("locked\t");
 	    }
 
 	    /* print missing locked filename */
@@ -762,11 +762,12 @@ scan_rcsfile(char *filename, char *arg)
 	    need_nl = 0;
 	    fflush(stdout);
 	}
+    }
 
     /*
      * not locked, look for missing files if -m
      */
-    } else if (mflag && missing) {
+    if (mflag && missing) {
 
 	/* if -c, print 1-word comment */
 	if (cflag) {
@@ -779,7 +780,7 @@ scan_rcsfile(char *filename, char *arg)
 
 	/* if -l, print fake owner and locked version */
 	if (lflag) {
-	    printf("\t:gone:\t-1");
+	    printf("\t:n/a:\t-1");
 	}
 
 	/* if -t, print RCS mod date */
@@ -892,7 +893,7 @@ scan_rcsdir(char *dir1, char *dir2, int recurse)
 	}
 
 	/*
-	 * report if we have a .rpm{orig,init,save,new} file and -R
+	 * report if we have a *.rpm{orig,init,save,new} file and -R
 	 */
 	if (Rflag && (strendstr(f->d_name, &flen, ".rpmorig", NULL) > 0 ||
 		      strendstr(f->d_name, &flen, ".rpminit", NULL) > 0 ||
@@ -910,12 +911,8 @@ scan_rcsdir(char *dir1, char *dir2, int recurse)
 	    }
 
 	    /* print missing filename */
-	    if (pflag) {
-		if (realpath(filename, resolved) == NULL) {
-		    printf("%s", filename);
-		} else {
-		    printf("%s", resolved);
-		}
+	    if (pflag && realpath(filename, resolved) != NULL) {
+		printf("%s", resolved);
 	    } else {
 		printf("%s", filename);
 	    }
