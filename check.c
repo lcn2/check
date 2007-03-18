@@ -58,6 +58,7 @@ static int mflag = 0;		/* report missing files under RCS */
 static int pflag = 0;		/* print the real path of a file */
 static int qflag = 0;		/* do not report locked filenames */
 static int rflag = 0;		/* recursive search for checked files */
+static int Rflag = 0;		/* report on .rpm{orig,init,save,new} files */
 static int tflag = 0;		/* print RCS mod date timestamp */
 static int vflag = 0;		/* verbosity level */
 static int xflag = 0;		/* do not cross filesystem when recursing */
@@ -128,8 +129,9 @@ static int avoid_setup = 0;	/* avoid table has been setup */
 #define EXIT_MASK_MISSING	0x02	/* set bit if RCS missing file */
 #define EXIT_MASK_DIFF		0x04	/* set bit if file and RCS differ */
 #define EXIT_MASK_ACCESS	0x08	/* set bit if access errors */
-#define EXIT_FATAL		0x10	/* fatal error encounted */
-int exitcode = 0;			/* how we will/should exit */
+#define EXIT_MASK_RPM		0x10	/* set bit .rpm{orig,init,save,new} */
+#define EXIT_FATAL		0x20	/* fatal error encounted */
+static int exitcode = 0;		/* how we will/should exit */
 
 static char *program;		/* our name */
 static char *prog;		/* basename of program */
@@ -151,6 +153,7 @@ static char *base_name(char *path);
 static char *dir_name(char *path);
 static int ok_to_recurse(char *path, char *name, struct stat *sbuf);
 static void avoid_init(void);
+static void set_exitcode_mask(int mask);
 static void dbg(int level, char *fmt, ...);
 static void warn(char *warn1, char *warn2, int err);
 static void fatal(char *msg1, char *msg2, int err);
@@ -206,7 +209,7 @@ parse_args(int argc, char **argv)
 	pflag = 1;
 	rflag = 1;
     }
-    while ((i = getopt(argc, argv, "cdlmpqrs:tv:xh")) != -1) {
+    while ((i = getopt(argc, argv, "cdlmpqrRs:tv:xh")) != -1) {
 	switch (i) {
 	case 'c':
 	    cflag = 1;
@@ -229,6 +232,9 @@ parse_args(int argc, char **argv)
 	    break;
 	case 'r':
 	    rflag = 1;
+	    break;
+	case 'R':
+	    Rflag = 1;
 	    break;
 	case 's':
 	    s = malloc(sizeof(struct skip));
@@ -277,9 +283,8 @@ parse_args(int argc, char **argv)
 	    /*FALLTHRU*/
 	default:
 	    fprintf(stderr,
-	    "usage: %s [-c] [-d] [-l] [-m] [-p] [-r] [-t] [-x] [-s /dir]...\n"
-	    "\t\t[-h][-v level] [path ...]\n"
-	    "\n"
+	"usage: %s [-c] [-d] [-l] [-m] [-p] [-r] [-R] [-t] [-x] [-s /dir]...\n"
+	    "\t\t[-h] [-v level] [path ...]\n"
 	    "\t-c\t\tprint 1-word comment before each filename (def: don't)\n"
 	    "\t-d\t\tnote when file and RCS differ (def: don't)\n"
 	    "\t-h\t\tprint help and exit 0 (def: don't)\n"
@@ -288,24 +293,25 @@ parse_args(int argc, char **argv)
 	    "\t-p\t\tprint absolute paths (def: don't unless using rcheck)\n"
 	    "\t-q\t\tdo not report locked filenames (def: do)\n"
 	    "\t-r\t\trecursive search (def: don't unless using rcheck)\n"
-	    "\t-s /dir\tskip dirs starting with /dir, sets -p (def: don't)\n"
+	    "\t-R\t\treport on .rpm{orig,init,save,new} files (def: don't)\n"
+	    "\t-s /dir\t\tskip dirs starting with /dir, sets -p (def: don't)\n"
 	    "\t-t\t\tprint RCS modifcation timestamp (def: don't)\n"
 	    "\t-x\t\tdo not cross filesystems when -r (def: do)\n"
 	    "\t-v level\tdebugging level (def: 0)\n"
-	    "\n"
 	    "exit 0 ==> all OK\n"
-	    "exit 16 ==> fatal error\n"
-	    "\n"
-	    "exit bit 0 ==> found locked file (1,3,5,7,9,11,13,15)\n"
-	    "exit bit 1 ==> found file not checked out (2,3,6,7,10,11,14,15)\n"
-	    "exit bit 2 ==> found file different from top of RCS (8-15)\n",
+	    "exit bit 0 ==> locked file (1, 3, 5, 7, 9, 11, 13, 15,\n"
+	    "                            17, 19, 21, 23, 25, 27, 29, 31)\n"
+	    "exit bit 1 ==> -m & file not checked out (2-3, 6-7, 10-11, 14-15,\n"
+	    "                                          18-19, 22-23, 26-27, 30-31)\n"
+	    "exit bit 2 ==> -d and file different from RCS (8-15, 24-31)\n"
+	    "exit bit 3 ==> -R and .rpm{orig,init,save,new} found (16-31)\n"
+	    "exit 32 ==> fatal error\n",
 	    program);
 	    dbg(1, "exit(%d)", hflag ? 0 : EXIT_FATAL);
 	    exit(hflag ? 0 : EXIT_FATAL);
 	}
     }
     /* NOTE: if no args, arg will be NULL which is OK for process_arg() */
-    dbg(1, "argc: %d  exitcode: %d", argc, exitcode);
     if (cflag) {
 	dbg(1, "-c: print 1-word comment before each filename");
     }
@@ -686,8 +692,9 @@ scan_rcsfile(char *filename, char *arg)
     /* determine if the file associated with the RCS file exists */
     if (stat(arg, &fbuf) < 0 || !S_ISREG(fbuf.st_mode)) {
 	missing = 1;
-	exitcode |= EXIT_MASK_MISSING;
-	dbg(7, "exitcode is now %d", exitcode);
+	if (mflag) {
+	    set_exitcode_mask(EXIT_MASK_MISSING);
+        }
     } else {
 	missing = 0;
     }
@@ -709,8 +716,7 @@ scan_rcsfile(char *filename, char *arg)
 	    missing_base = base_name(arg);
 	    if (realpath(missing_dir, dir_resolved) == NULL) {
 		warn("cannot resolve missing dir", missing_dir, errno);
-		exitcode |= EXIT_MASK_ACCESS;
-		dbg(7, "exitcode is now %d", exitcode);
+		set_exitcode_mask(EXIT_MASK_ACCESS);
 		snprintf(resolved, PATH_MAX+1, "%s/%s",
 			 strcmp(missing_dir, "/") == 0 ? "" : missing_dir,
 			 missing_base);
@@ -842,8 +848,7 @@ scan_rcsdir(char *dir1, char *dir2, int recurse)
     if ((d = opendir(dir1)) == NULL) {
 	/* no a directory, not accessable, etc. */
 	warn("cannot open directory", dir1, errno);
-	exitcode |= EXIT_MASK_ACCESS;
-	dbg(7, "exitcode is now %d", exitcode);
+	set_exitcode_mask(EXIT_MASK_ACCESS);
 	return;
     }
     dir1len = strlen(dir1);
@@ -881,6 +886,53 @@ scan_rcsdir(char *dir1, char *dir2, int recurse)
 	 */
 	if (stat(filename, &fbuf) < 0) {
 	    dbg(9, "ignoring vanished name: %s", filename);
+	    free(filename);
+	    errno = 0;
+	    continue;
+	}
+
+	/*
+	 * report if we have a .rpm{orig,init,save,new} file and -R
+	 */
+	if (Rflag && (strendstr(f->d_name, &flen, ".rpmorig", NULL) > 0 ||
+		      strendstr(f->d_name, &flen, ".rpminit", NULL) > 0 ||
+		      strendstr(f->d_name, &flen, ".rpmsave", NULL) > 0 ||
+		      strendstr(f->d_name, &flen, ".rpmnew", NULL) > 0)) {
+
+	    char resolved[PATH_MAX+1];	/* resolved filename */
+
+	    /* note in exitcode */
+	    set_exitcode_mask(EXIT_MASK_RPM);
+
+	    /* if -c, print 1-word comment */
+	    if (cflag) {
+		printf("rpm\t");
+	    }
+
+	    /* print missing filename */
+	    if (pflag) {
+		if (realpath(filename, resolved) == NULL) {
+		    printf("%s", filename);
+		} else {
+		    printf("%s", resolved);
+		}
+	    } else {
+		printf("%s", filename);
+	    }
+
+	    /* if -l, print fake owner and locked version */
+	    if (lflag) {
+		printf("\t:n/a:\t-1");
+	    }
+
+	    /* if -t, print RCS mod date */
+	    if (tflag) {
+		printf("\t%s", ctime(&(fbuf.st_mtime)));
+		/* ctime string ends in a newline */
+	    } else {
+	    	putchar('\n');
+	    }
+	    fflush(stdout);
 	    free(filename);
 	    errno = 0;
 	    continue;
@@ -978,8 +1030,7 @@ scan_rcsdir(char *dir1, char *dir2, int recurse)
 	if ((d = opendir(dir2)) == NULL) {
 	    /* no a directory, not accessable, etc. */
 	    warn("cannot open directory", dir2, errno);
-	    exitcode |= EXIT_MASK_ACCESS;
-	    dbg(7, "exitcode is now %d", exitcode);
+	    set_exitcode_mask(EXIT_MASK_ACCESS);
 	    return;
 	}
 	dir2len = strlen(dir2);
@@ -1581,22 +1632,19 @@ readrcs(char *f, struct stat *statPtr)
     dbg(5, "read RCS on: %s", f);
     if ((fd = open(fname, O_RDONLY)) < 0) {
 	warn("cannot open RCS file", fname, errno);
-	exitcode |= EXIT_MASK_ACCESS;
-	dbg(7, "exitcode is now %d", exitcode);
+	set_exitcode_mask(EXIT_MASK_ACCESS);
 	return 0;
     }
     if (fstat(fd, statPtr) < 0) {
 	warn("cannot stat RCS file", fname, errno);
 	close(fd);
-	exitcode |= EXIT_MASK_ACCESS;
-	dbg(7, "exitcode is now %d", exitcode);
+	set_exitcode_mask(EXIT_MASK_ACCESS);
 	return 0;
     }
     if (statPtr->st_size == 0) {
 	warn("zero length RCS file", fname, 0);
 	close(fd);
-	exitcode |= EXIT_MASK_ACCESS;
-	dbg(7, "exitcode is now %d", exitcode);
+	set_exitcode_mask(EXIT_MASK_ACCESS);
 	return 0;
     }
     buf = (char *) mmap((void *) 0, statPtr->st_size, PROT_READ | PROT_WRITE,
@@ -1604,8 +1652,7 @@ readrcs(char *f, struct stat *statPtr)
     if (buf == (char *) (-1)) {
 	warn("cannot mmap RCS file", fname, 0);
 	close(fd);
-	exitcode |= EXIT_MASK_ACCESS;
-	dbg(7, "exitcode is now %d", exitcode);
+	set_exitcode_mask(EXIT_MASK_ACCESS);
 	return 0;
     }
 
@@ -1615,8 +1662,7 @@ readrcs(char *f, struct stat *statPtr)
     if (strncmp(buf, "head", sizeof("head") - 1) != 0) {
 	warn("malformed RCS file, missing head", fname, 0);
 	close(fd);
-	exitcode |= EXIT_MASK_ACCESS;
-	dbg(7, "exitcode is now %d", exitcode);
+	set_exitcode_mask(EXIT_MASK_ACCESS);
 	return 0;
     }
 
@@ -1653,16 +1699,14 @@ readrcs(char *f, struct stat *statPtr)
     if (check_rcs_hdr(p, "malformed RCS file, invalid head line",
     		      fname, end_rcs_header)) {
 	close(fd);
-	exitcode |= EXIT_MASK_ACCESS;
-	dbg(7, "exitcode is now %d", exitcode);
+	set_exitcode_mask(EXIT_MASK_ACCESS);
 	return 0;
     }
     q = strchr(p, ';');
     if (check_rcs_hdr(q, "malformed RCS file, invalid head format",
     		      fname, end_rcs_header)) {
 	close(fd);
-	exitcode |= EXIT_MASK_ACCESS;
-	dbg(7, "exitcode is now %d", exitcode);
+	set_exitcode_mask(EXIT_MASK_ACCESS);
 	return 0;
     }
 
@@ -1673,8 +1717,7 @@ readrcs(char *f, struct stat *statPtr)
     if (check_rcs_hdr(p, "malformed RCS file, missing locks section",
     		      fname, end_rcs_header)) {
 	close(fd);
-	exitcode |= EXIT_MASK_ACCESS;
-	dbg(7, "exitcode is now %d", exitcode);
+	set_exitcode_mask(EXIT_MASK_ACCESS);
 	return 0;
     }
     p += sizeof("\nlocks") - 1;
@@ -1682,16 +1725,14 @@ readrcs(char *f, struct stat *statPtr)
     if (check_rcs_hdr(p, "malformed RCS file, invalid locks section",
     		      fname, end_rcs_header)) {
 	close(fd);
-	exitcode |= EXIT_MASK_ACCESS;
-	dbg(7, "exitcode is now %d", exitcode);
+	set_exitcode_mask(EXIT_MASK_ACCESS);
 	return 0;
     }
     q = strchr(p, ';');
     if (check_rcs_hdr(q, "malformed RCS file, invalid locks format",
     		      fname, end_rcs_header)) {
 	close(fd);
-	exitcode |= EXIT_MASK_ACCESS;
-	dbg(7, "exitcode is now %d", exitcode);
+	set_exitcode_mask(EXIT_MASK_ACCESS);
 	return 0;
     }
 
@@ -1737,8 +1778,7 @@ readrcs(char *f, struct stat *statPtr)
      * report that the RCS,v file is locked
      */
     close(fd);
-    exitcode |= EXIT_MASK_LOCK;
-    dbg(7, "exitcode is now %d", exitcode);
+    set_exitcode_mask(EXIT_MASK_LOCK);
     dbg(5, "locked RCS file: %s", f);
     return 1;
 }
@@ -2012,6 +2052,29 @@ avoid_init(void)
 
 
 /*
+ * set_exitcode_mask - set a bit in the exit code
+ */
+static void
+set_exitcode_mask(int mask)
+{
+    int oldexit;			/* exitcode before mask */
+
+    /* save current exitcode */
+    oldexit = exitcode;
+
+    /* set mask bit */
+    exitcode |= mask;
+
+    /* report if changed */
+    if (oldexit != exitcode) {
+	dbg(3, "exit mask set %x, exitcode changed from %d to %d",
+		mask, oldexit, exitcode);
+    }
+    return;
+}
+
+
+/*
  * dbg - debugging output if -v level is high enough
  */
 static void
@@ -2119,7 +2182,7 @@ fatal(char *msg1, char *msg2, int err)
 	}
     }
     exitcode = EXIT_FATAL;
-    dbg(7, "exitcode is now %d", exitcode);
+    dbg(3, "exitcode is now %d", exitcode);
     dbg(1, "exit(%d)", exitcode);
     exit(exitcode);
 }
