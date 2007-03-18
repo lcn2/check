@@ -1,8 +1,8 @@
 /*
  * check - check on checked out RCS files
  *
- * @(#) $Revision: 3.3 $
- * @(#) $Id: check.c,v 3.3 2007/03/17 14:20:28 chongo Exp chongo $
+ * @(#) $Revision: 3.4 $
+ * @(#) $Id: check.c,v 3.4 2007/03/18 06:03:14 chongo Exp chongo $
  * @(#) $Source: /usr/local/src/cmd/check/RCS/check.c,v $
  *
  * Please do not copyright this code.  This code is in the public domain.
@@ -15,11 +15,12 @@
  * OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
  *
- * Long agp, there was an old version of this code that was written by Kipp Hickman.
+ * Long agp, there was an old version of this code that was written
+ * by Kipp Hickman.
  *
- * The many bug fixes, the many security fixes, the major code cleanup / rewrite,
- * the change of -l to prints lock info (not filenames), and rest of the flags
- * were all added / coded by:
+ * The many bug fixes, the many security fixes, the major code cleanup,
+ * a complete code rewrite, the change of -l to prints lock info (not
+ * filenames), and rest of the flags: these were all done by:
  *
  * 	chongo (Landon Curt Noll) /\oo/\
  * 	http://www.isthe.com/chongo/index.html
@@ -47,32 +48,67 @@
 
 #define MAX_OWNER_LEN 20	/* longest owner printed */
 #define MAX_REVIS_LEN 20	/* longest owner revision printed */
-char owner[MAX_OWNER_LEN+1];	/* owner of file co'd */
-char revision[MAX_REVIS_LEN+1];	/* revision of file co'd */
-int cflag = 0;			/* print 1 word comment before filenames */
-int dflag = 0;			/* print RCS mod date */
-int hflag = 0;			/* print help and exit */
-int lflag = 0;			/* print RCS lock info */
-int mflag = 0;			/* report missing files under RCS */
-int pflag = 0;			/* print the real path of a file */
-int qflag = 0;			/* do not report locked filenames */
-int rflag = 0;			/* recursive search for checked files */
-int vflag = 0;			/* verbosity level */
+static char owner[MAX_OWNER_LEN+1];	/* owner of file co'd */
+static char revision[MAX_REVIS_LEN+1];	/* revision of file co'd */
+static int cflag = 0;		/* print 1 word comment before filenames */
+static int dflag = 0;		/* note when file and RCS differ */
+static int hflag = 0;		/* print help and exit */
+static int lflag = 0;		/* print RCS lock info */
+static int mflag = 0;		/* report missing files under RCS */
+static int pflag = 0;		/* print the real path of a file */
+static int qflag = 0;		/* do not report locked filenames */
+static int rflag = 0;		/* recursive search for checked files */
+static int tflag = 0;		/* print RCS mod date timestamp */
+static int vflag = 0;		/* verbosity level */
+static int xflag = 0;		/* do not cross filesystem when recursing */
+
+/* -r static variables */
+static dev_t arg_dev;		/* device number of argument (for -x) */
+
+/*
+ * various special devices to avoid that might be found on various systems
+ *
+ * NOTE: We only set exists to 1 if the mount point exists AND the its device
+ *	 number differs from the device number if the dirname.  I.e., only
+ *	 if the mountpoint exists and the device number changes while going
+ *	 into it.
+ *
+ * NOTE: This list need not be exhaustive, just enough to avoid taking a
+ *	 long time walking into places where recursive checking for RCS
+ *	 does not belong.
+ */
+struct avoid {		/* devices to avoid recursing into under -r */
+    char *path;		/* mount point */
+    int exists;		/* 0 ==> does not exist, 1 ==> exists, ignore */
+    dev_t device;	/* mount point device number if exists == 1 */
+};
+static struct avoid avoid[] = {
+    /* common */
+    { "/proc", 0, 0 },
+    { "/dev", 0, 0 },
+    /* RedHat Linux */
+    { "/sys", 0, 0 },
+    { "/dev/pts", 0, 0 },
+    { "/proc/bus/usb", 0, 0 },
+    { "/dev/shm", 0, 0 },
+    { "/proc/sys/fs/binfmt_misc", 0, 0 },
+    /* Mac OS X */
+    { "/.vol", 0, 0 },
+    { "/Network", 0, 0 },
+    { "/automount/Servers", 0, 0 },
+    { "/automount/static", 0, 0 },
+    /* FreeBSD */
+    { "/var/named/dev", 0, 0 },
+    /* misc */
+    { "/afs", 0, 0 },
+    /* end of list */
+    { NULL, 0, 0 }
+};
+static int avoid_setup = 0;	/* avoid table has been setup */
+
 
 /*
  * exit codes
- *
- * 0 ==> no locks, all is OK
- * 1 ==> some locks, all is OK
- * 2 ==> no locks, some RCS files not checked out
- * 3 ==> some locks, some RCS files not checked out
- *
- * 4 ==> no locks, access or RCS format problems
- * 5 ==> some locks, access or RCS format problems
- * 6 ==> no locks, some RCS not checked out, access or RCS format problems
- * 7 ==> some locks, some RCS not checked out, access or RCS format problems
- *
- * 8 ==> fatal error
  *
  * NOTE: Format errors are reserved for mal-formed ,v files that we can
  *	 read.  Access errors are reserved for not being able to read/access
@@ -80,15 +116,17 @@ int vflag = 0;			/* verbosity level */
  *	 regular file or encounting an RCS inode that is not a directory
  *	 will not cause exitcode to change.
  */
-#define EXIT_MASK_LOCK    0x1		/* set bit if lock found */
-#define EXIT_MASK_MISSING  0x2		/* set bit if RCS missing file */
-#define EXIT_MASK_ACCESS  0x4		/* set bit if access errors */
-#define EXIT_FATAL 8			/* fatal error encounted */
+#define EXIT_MASK_LOCK		0x01	/* set bit if lock found */
+#define EXIT_MASK_MISSING	0x02	/* set bit if RCS missing file */
+#define EXIT_MASK_DIFF		0x04	/* set bit if file and RCS differ */
+#define EXIT_MASK_ACCESS	0x08	/* set bit if access errors */
+#define EXIT_FATAL		0x10	/* fatal error encounted */
 int exitcode = 0;			/* how we will/should exit */
 
 static char *program;		/* our name */
 static char *prog;		/* basename of program */
 
+static void parse_args(int argc, char **argv);
 static void process_arg(char *arg);
 static void scan_rcsfile(char *filename, char *arg);
 static void scan_rcsdir(char *dir, char *dir2, int recurse);
@@ -103,20 +141,54 @@ static int check_rcs_hdr(char *p, char *msg, char *fname, char *end_rcs_header);
 static int readrcs(char *f, struct stat *statPtr);
 static char *base_name(char *path);
 static char *dir_name(char *path);
+static int ok_to_recurse(char *path, char *name, struct stat *sbuf);
+static void avoid_init(void);
 static void dbg(int level, char *fmt, ...);
 static void warn(char *warn1, char *warn2, int err);
 static void fatal(char *msg1, char *msg2, int err);
 
 
+/*
+ * main - parse args, process args, exit with the proper exit code
+ */
 int
 main(int argc, char *argv[])
 {
-    extern char *optarg;	/* option argument */
     extern int optind;		/* argv index of the next arg */
     char *arg;			/* arg being processed */
-    int i;
 
     /* parse args */
+    parse_args(argc, argv);
+    argc -= optind;
+    argv += optind;
+
+    /*
+     * process all the remaining files and dirs on the command line
+     */
+    arg = argv[0];
+    do {
+	/* process this argument (or the default RCS argument) */
+	process_arg(arg);
+    } while (--argc > 0 && (arg = (++argv)[0]) != NULL);
+
+    /*
+     * exit according to what was found and/or errors
+     */
+    dbg(1, "exit(%d)", exitcode);
+    exit(exitcode);
+}
+
+
+/*
+ * parse_args
+ */
+static void
+parse_args(int argc, char **argv)
+{
+    extern char *optarg;	/* option argument */
+    extern int optind;		/* argv index of the next arg */
+    int i;
+
     program = argv[0];
     prog = base_name(program);
     if (prog[0] == 'r') {
@@ -124,12 +196,13 @@ main(int argc, char *argv[])
 	pflag = 1;
 	rflag = 1;
     }
-    while ((i = getopt(argc, argv, "cdlmpqrv:h")) != -1) {
+    while ((i = getopt(argc, argv, "cdlmpqrs:tv:xh")) != -1) {
 	switch (i) {
 	case 'c':
 	    cflag = 1;
 	    break;
 	case 'd':
+	    /* XXX code */
 	    dflag = 1;
 	    break;
 	case 'l':
@@ -147,60 +220,83 @@ main(int argc, char *argv[])
 	case 'r':
 	    rflag = 1;
 	    break;
+	case 's':
+	    pflag = 1;	/* -s implies -p */
+	    /* XXX code */
+	    break;
+	case 't':
+	    tflag = 1;
+	    break;
 	case 'v':
 	    vflag = atoi(optarg);
+	    break;
+	case 'x':
+	    xflag = 1;
 	    break;
 	case 'h':
 	    hflag = 1;
 	    /*FALLTHRU*/
 	default:
 	    fprintf(stderr,
-	    "usage: %s [-c][-d][-l][-m][-p][-r] [-h][-v level] [path ...]\n"
+	    "usage: %s [-c] [-d] [-l] [-m] [-p] [-r] [-t] [-x] [-s /skip]...\n"
+	    "\t\t[-h][-v level] [path ...]\n"
 	    "\n"
 	    "\t-c\t\tprint 1-word comment before each filename (def: don't)\n"
-	    "\t-d\t\tprint RCS modifcation timestamp (def: don't)\n"
+	    "\t-d\t\tnote when file and RCS differ (def: don't)\n"
 	    "\t-h\t\tprint help and exit 0 (def: don't)\n"
 	    "\t-l\t\tprint RCS lock information (def: don't)\n"
-	    "\t-m\t\talso report missing files under RCS control (def: don't)\n"
-	    "\t-p\t\tprint resolved absolute paths (def: don't unless rcheck)\n"
+	    "\t-m\t\treport missing files under RCS control (def: don't)\n"
+	    "\t-p\t\tprint absolute paths (def: don't unless rcheck)\n"
 	    "\t-q\t\tdo not report locked filenames (def: do)\n"
 	    "\t-r\t\trecursive search (def: don't unless rcheck)\n"
-	    "\t-v level\tdebugging level\n"
+	    "\t-s /skip\tskip paths starting with /skip, sets -p (def: don't)\n"
+	    "\t-t\t\tprint RCS modifcation timestamp (def: don't)\n"
+	    "\t-x\t\tdo not cross filesystems when -r (def: do)\n"
+	    "\t-v level\tdebugging level (def: 0)\n"
 	    "\n"
-	    "exit 0 ==> no locks, all is OK\n"
-	    "exit 1 ==> some locks, all is OK\n"
-	    "exit 2 ==> no locks, some not checked out\n"
-	    "exit 3 ==> some locks, some not checked out\n"
+	    "exit 0 ==> all OK\n"
 	    "\n"
-	    "exit 4 ==> no locks, access/RCS format problems\n"
-	    "exit 5 ==> some locks, access/RCS format problems\n"
-	    "exit 6 ==> no locks, some not checked out, access/RCS problems\n"
-	    "exit 7 ==> some locks, some not checked out, access/RCS problems\n"
+	    "exit bit 0 ==> found locked file (1,3,5,7,9,11,13,15)\n"
+	    "exit bit 1 ==> found file not checked out (2,3,6,7,10,11,14,15)\n"
+	    "exit bit 2 ==> found file different from top of RCS (8-15)\n"
 	    "\n"
-	    "exit 8 ==> fatal error\n", program);
+	    "exit 16 ==> fatal error\n",
+	    program);
 	    dbg(1, "exit(%d)", hflag ? 0 : EXIT_FATAL);
 	    exit(hflag ? 0 : EXIT_FATAL);
 	}
     }
-    argc -= optind;
-    argv += optind;
     /* NOTE: if no args, arg will be NULL which is OK for process_arg() */
-    arg = argv[0];
     dbg(1, "argc: %d  exitcode: %d", argc, exitcode);
-
-    /*
-     * process all the remaining files and dirs on the command line
-     */
-    do {
-	/* process this argument (or the default RCS argument) */
-	process_arg(arg);
-    } while (--argc > 0 && (arg = (++argv)[0]) != NULL);
-
-    /*
-     * exit according to what was found and/or errors
-     */
-    dbg(1, "exit(%d)", exitcode);
-    exit(exitcode);
+    if (cflag) {
+	dbg(1, "-c: print 1-word comment before each filename");
+    }
+    if (dflag) {
+	dbg(1, "XXX: -d code not yet implemented");
+	dbg(1, "-d: note when file and RCS differ");
+    }
+    if (lflag) {
+	dbg(1, "-l: print RCS lock information");
+    }
+    if (mflag) {
+	dbg(1, "-m: report missing files under RCS control");
+    }
+    if (pflag) {
+	dbg(1, "-p: print resolved absolute paths");
+    }
+    if (qflag) {
+	dbg(1, "-q: do not report locked filenames");
+    }
+    if (rflag) {
+	dbg(1, "-r: recursive search");
+    }
+    if (tflag) {
+	dbg(1, "-t: print RCS modifcation timestamp");
+    }
+    if (xflag) {
+	dbg(1, "-x: do not cross filesystems when -r");
+    }
+    return;
 }
 
 
@@ -256,6 +352,7 @@ process_arg(char *arg)
      * NOTE: I didn't make the rules below, the RCS tools did!
      */
     statret = stat(arg, &sbuf);
+    arg_dev = (statret >= 0) ? sbuf.st_dev : 0;
     if (strendstr(arg, &len, ",v", NULL) > 0) {
 
 	/*
@@ -827,11 +924,16 @@ scan_rcsdir(char *dir1, char *dir2, int recurse)
 	 * NOTE: If dir2 is non-NULL, then this means dir1 is an
 	 *	 RCS directoy and thus we do not recurse.
 	 */
-	if (rflag && dir2 == NULL && S_ISDIR(fbuf.st_mode) &&
-	    strcmp(f->d_name, "RCS") != 0 &&
-	    strcmp(f->d_name, ".") != 0 &&
-	    strcmp(f->d_name, "..") != 0) {
+	if (rflag && dir2 == NULL && S_ISDIR(fbuf.st_mode)) {
+
+	    /* determine if it is OK to recuse into this sub-directory */
+	    if (!ok_to_recurse(filename, f->d_name, &fbuf)) {
+		free(filename);
+		errno = 0;
+		continue;
+	    }
 	    dbg(9, "recursing on non-RCS dir: %s", filename);
+
 	    /* recurse on the sub-directory */
 	    process_arg(filename);
 	    dbg(9, "returned after recursion to %s", dir2);
@@ -988,11 +1090,16 @@ scan_rcsdir(char *dir1, char *dir2, int recurse)
 		errno = 0;
 		continue;
 	    }
-	    if (rflag && S_ISDIR(fbuf.st_mode) &&
-		strcmp(f->d_name, "RCS") != 0 &&
-	        strcmp(f->d_name, ".") != 0 &&
-	        strcmp(f->d_name, "..") != 0) {
+	    if (rflag && S_ISDIR(fbuf.st_mode)) {
+
+		/* determine if it is OK to recuse into this sub-directory */
+		if (!ok_to_recurse(filename, f->d_name, &fbuf)) {
+		    free(filename);
+		    errno = 0;
+		    continue;
+		}
 		dbg(9, "recursing on non-RCS dir: %s", filename);
+
 		/* recurse on the sub-directory */
 		process_arg(filename);
 		dbg(9, "returned after recursion to %s", dir2);
@@ -1786,6 +1893,128 @@ dir_name(char *path)
     }
     free(path_dup);
     return ret;
+}
+
+
+/*
+ * ok_to_recurse - determine if a path is OK to recurse into
+ */
+static int
+ok_to_recurse(char *path, char *name, struct stat *sbuf)
+{
+    struct stat lbuf;	/* stat of a symlink */
+    struct avoid *p;	/* avoid table pointer */
+
+    /* initialize the mount point avoid table */
+    if (avoid_setup == 0) {
+	avoid_init();
+    }
+
+    /* do not recuse into RCS, . or .. */
+    if (strcmp(name, "RCS") == 0) {
+	dbg(9, "will not recurse under RCS: %s", path);
+	return 0;
+    }
+    if (strcmp(name, ".") == 0) {
+	dbg(9, "will not recurse into .: %s", path);
+	return 0;
+    }
+    if (strcmp(name, "..") == 0) {
+	dbg(9, "will not recurse into ..: %s", path);
+	return 0;
+    }
+
+    /* determine if -x allows us to recurse */
+    if (xflag && (sbuf->st_dev != arg_dev)) {
+	dbg(7, "will not recurse into another systetem: %s", path);
+	return 0;
+    }
+
+    /* do not follow symlinks to other directories */
+    if (lstat(path, &lbuf) < 0) {
+	dbg(7, "ignoring lstat vanished name: %s", path);
+	return 0;
+    }
+    if (S_ISLNK(lbuf.st_mode)) {
+	dbg(9, "will not recurse into directory symlink: %s", path);
+	return 0;
+    }
+
+    /* scan the avoid table looking for filesystems to avoid */
+    for (p = &avoid[0]; p->path != NULL; ++p) {
+
+	/* ignore filesystems that do not exist */
+	if (! p->exists) {
+	    continue;
+	}
+
+	/* ignore if device is a a filesystem to avoid */
+	if (sbuf->st_dev == p->device) {
+	    dbg(7, "will not recurse under %s: %s", p->path, path);
+	    return 0;
+	}
+    }
+
+    /* OK to recuse */
+    return 1;
+}
+
+
+/*
+ * avoid_init - initialize the avoid array
+ */
+static void
+avoid_init(void)
+{
+    struct avoid *p;	/* avoid table pointer */
+    struct stat mbuf;	/* status of path */
+    struct stat pbuf;	/* status of parent directory of path */
+    char *parent;	/* parent directory of path */
+
+    /*
+     * process each table entry
+     */
+    for (p = &avoid[0]; p->path != NULL; ++p) {
+
+	/* ignore if path does not exist */
+	if (stat(p->path, &mbuf) < 0) {
+	    /* path does not exist, leave entry as ignore */
+	    dbg(9, "%s: does not exist, no need to avoid", p->path);
+	    continue;
+	}
+
+	/* determine parent directory of path */
+	parent = dir_name(p->path);
+	if (stat(parent, &pbuf) < 0) {
+	    /* parent does not exist, leave entry as ignore */
+	    dbg(9, "%s: parent: %s does not exist, no need to avoid",
+	    	p->path, parent);
+	    free(parent);
+	    parent = NULL;
+	    continue;
+	}
+
+	/* ignore if patent and path are same device */
+	if (pbuf.st_dev == mbuf.st_dev) {
+	    /* parent same device as path, not a mount point */
+	    dbg(9, "%s: parent: %s has same device number, no need to avoid",
+	    	p->path, parent);
+	    free(parent);
+	    parent = NULL;
+	    continue;
+	}
+	free(parent);
+	parent = NULL;
+
+	/* avoid path, it is a mount point */
+	p->exists = 1;
+	p->device = mbuf.st_dev;
+	dbg(8, "%s: will avoid this mount point under -r", p->path);
+    }
+
+    /* avoid table is ready now */
+    avoid_setup = 1;
+    return;
 }
 
 
