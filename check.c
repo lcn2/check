@@ -1,8 +1,8 @@
 /*
  * check - check on checked out RCS files
  *
- * @(#) $Revision: 4.2 $
- * @(#) $Id: check.c,v 4.2 2007/03/18 13:16:06 chongo Exp chongo $
+ * @(#) $Revision: 4.3 $
+ * @(#) $Id: check.c,v 4.3 2007/03/18 13:48:26 chongo Exp chongo $
  * @(#) $Source: /usr/local/src/cmd/check/RCS/check.c,v $
  *
  * Please do not copyright this code.  This code is in the public domain.
@@ -212,8 +212,22 @@ parse_args(int argc, char **argv)
 	pflag = 1;
 	rflag = 1;
     }
-    while ((i = getopt(argc, argv, "cdelmpqrRs:tv:xh")) != -1) {
+    while ((i = getopt(argc, argv, "acdelmpqrRs:tv:xh")) != -1) {
 	switch (i) {
+	case 'a':
+	    cflag = 1;
+	    dflag = 1;
+	    mflag = 1;
+	    pflag = 1;
+	    break;
+	case 'A':
+	    cflag = 1;
+	    dflag = 1;
+	    eflag = 1;
+	    mflag = 1;
+	    pflag = 1;
+	    Rflag = 1;
+	    break;
 	case 'c':
 	    cflag = 1;
 	    break;
@@ -288,8 +302,11 @@ parse_args(int argc, char **argv)
 	    /*FALLTHRU*/
 	default:
 	    fprintf(stderr,
-	"usage: %s [-c] [-d] [-e] [-l] [-m] [-p] [-r] [-R] [-s /dir]... [-t] [-x]\n"
-	    "\t\t[-h] [-v level] [path ...]\n"
+	    "usage: %s [-a] [-A] [-c] [-d] [-e] [-l] [-m] [-p] [-r] [-R]\n"
+	    "\t\t[-s /dir]... [-t] [-x] [-h] [-v level] [path ...]\n"
+	    "\n"
+	    "\t-a\t\t-c -d -m -p (with rcheck: -r)\n"
+	    "\t-A\t\t-c -d -e -m -p -R (with rcheck: -r)\n"
 	    "\t-c\t\tprint 1-word comment before each filename (def: don't)\n"
 	    "\t-d\t\tnote when file and RCS differ (def: don't)\n"
 	    "\t-e\t\treport files that are under RCS control (def: don't)\n"
@@ -299,11 +316,12 @@ parse_args(int argc, char **argv)
 	    "\t-p\t\tprint absolute paths (def: don't unless using rcheck)\n"
 	    "\t-q\t\tdo not report locked filenames (def: do)\n"
 	    "\t-r\t\trecursive search (def: don't unless using rcheck)\n"
-	    "\t-R\t\treport on *.rpm{orig,init,save,new} files (def: don't)\n"
-	    "\t-s /dir\t\tskip dirs starting with /dir, sets -p (def: don't)\n"
+	    "\t-R\t\tfind *.rpm{orig,init,save,new} files (def: don't)\n"
+	    "\t-s /dir\t\tskip paths starting with /dir, sets -p (def: don't)\n"
 	    "\t-t\t\tprint RCS modification timestamp (def: don't)\n"
 	    "\t-x\t\tdo not cross filesystems when -r (def: do)\n"
 	    "\t-v level\tdebugging level (def: 0)\n"
+	    "\n"
 	    "exit 0 ==> all OK\n"
 	    "exit bit 0 ==> locked file (1, 3, 5, 7, 9, 11, 13, 15,\n"
 	    "                            17, 19, 21, 23, 25, 27, 29, 31)\n"
