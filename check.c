@@ -1,8 +1,8 @@
 /*
  * check - check on checked out RCS files
  *
- * @(#) $Revision: 4.3 $
- * @(#) $Id: check.c,v 4.3 2007/03/18 13:48:26 chongo Exp chongo $
+ * @(#) $Revision: 4.4 $
+ * @(#) $Id: check.c,v 4.4 2007/03/19 07:55:31 chongo Exp chongo $
  * @(#) $Source: /usr/local/src/cmd/check/RCS/check.c,v $
  *
  * Please do not copyright this code.  This code is in the public domain.
@@ -1047,16 +1047,6 @@ scan_rcsdir(char *dir1, char *dir2, int recurse)
 	    strcmp(dir1, "/") == 0 ? "" : dir1, f->d_name);
 
 	/*
-	 * ignore if not a regular file that is readable
-	 */
-	if (stat(filename, &fbuf) < 0) {
-	    dbg(9, "ignoring vanished name: %s", filename);
-	    free(filename);
-	    errno = 0;
-	    continue;
-	}
-
-	/*
 	 * report if we have a *.rpm{orig,init,save,new} file and -R
 	 */
 	if (Rflag && (strendstr(f->d_name, &flen, ".rpmorig", NULL) > 0 ||
@@ -1094,6 +1084,16 @@ scan_rcsdir(char *dir1, char *dir2, int recurse)
 	    	putchar('\n');
 	    }
 	    fflush(stdout);
+	    free(filename);
+	    errno = 0;
+	    continue;
+	}
+
+	/*
+	 * ignore if not a regular file that is readable
+	 */
+	if (stat(filename, &fbuf) < 0) {
+	    dbg(9, "ignoring vanished name: %s", filename);
 	    free(filename);
 	    errno = 0;
 	    continue;
@@ -1260,6 +1260,49 @@ scan_rcsdir(char *dir1, char *dir2, int recurse)
 	    }
 	    snprintf(filename, dir2len + 1 + flen + 1, "%s/%s",
 		     strcmp(dir2, "/") == 0 ? "" : dir2, f->d_name);
+
+	    /*
+	     * report if we have a *.rpm{orig,init,save,new} file and -R
+	     */
+	    if (Rflag && (strendstr(f->d_name, &flen, ".rpmorig", NULL) > 0 ||
+			  strendstr(f->d_name, &flen, ".rpminit", NULL) > 0 ||
+			  strendstr(f->d_name, &flen, ".rpmsave", NULL) > 0 ||
+			  strendstr(f->d_name, &flen, ".rpmnew", NULL) > 0)) {
+
+		char resolved[PATH_MAX+1];	/* resolved filename */
+
+		/* note in exitcode */
+		set_exitcode_mask(EXIT_MASK_RPM);
+
+		/* if -c, print 1-word comment */
+		if (cflag) {
+		    printf("rpm\t");
+		}
+
+		/* print missing filename */
+		if (pflag && realpath(filename, resolved) != NULL) {
+		    printf("%s", resolved);
+		} else {
+		    printf("%s", filename);
+		}
+
+		/* if -l, print fake owner and locked version */
+		if (lflag) {
+		    printf("\t:n/a:\t-2");
+		}
+
+		/* if -t, print RCS mod date */
+		if (tflag) {
+		    printf("\t%s", ctime(&(fbuf.st_mtime)));
+		    /* ctime string ends in a newline */
+		} else {
+		    putchar('\n');
+		}
+		fflush(stdout);
+		free(filename);
+		errno = 0;
+		continue;
+	    }
 
 	    /*
 	     * if a non-RCS directory and we are recursing, recurse
