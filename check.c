@@ -1,8 +1,8 @@
 /*
  * check - check on checked out RCS files
  *
- * @(#) $Revision: 4.4 $
- * @(#) $Id: check.c,v 4.4 2007/03/19 07:55:31 chongo Exp chongo $
+ * @(#) $Revision: 4.5 $
+ * @(#) $Id: check.c,v 4.5 2007/06/07 20:44:15 chongo Exp chongo $
  * @(#) $Source: /usr/local/src/cmd/check/RCS/check.c,v $
  *
  * Please do not copyright this code.  This code is in the public domain.
@@ -34,6 +34,7 @@
 #include <sys/wait.h>
 #include <dirent.h>
 #include <string.h>
+extern char *strndup(const char *s, size_t n);
 #include <stdlib.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -1381,6 +1382,7 @@ scan_rcsdir(char *dir1, char *dir2, int recurse)
 }
 
 
+#if 0
 /*
  * strndup - like strdup() but with a limited copy length
  */
@@ -1397,6 +1399,7 @@ strndup(const char *s1, const size_t sz)
     s2[sz] = '\0';
     return s2;
 }
+#endif /* 0 */
 
 
 /*
