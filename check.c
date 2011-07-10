@@ -1,8 +1,8 @@
 /*
  * check - check on checked out RCS files
  *
- * @(#) $Revision: 4.5 $
- * @(#) $Id: check.c,v 4.5 2007/06/07 20:44:15 chongo Exp chongo $
+ * @(#) $Revision: 4.6 $
+ * @(#) $Id: check.c,v 4.6 2011/07/10 04:45:19 chongo Exp chongo $
  * @(#) $Source: /usr/local/src/cmd/check/RCS/check.c,v $
  *
  * Please do not copyright this code.  This code is in the public domain.
@@ -34,7 +34,6 @@
 #include <sys/wait.h>
 #include <dirent.h>
 #include <string.h>
-extern char *strndup(const char *s, size_t n);
 #include <stdlib.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
