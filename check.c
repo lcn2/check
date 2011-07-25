@@ -1,8 +1,8 @@
 /*
  * check - check on checked out RCS files
  *
- * @(#) $Revision: 4.6 $
- * @(#) $Id: check.c,v 4.6 2011/07/10 04:45:19 chongo Exp chongo $
+ * @(#) $Revision: 4.7 $
+ * @(#) $Id: check.c,v 4.7 2011/07/10 04:47:09 chongo Exp chongo $
  * @(#) $Source: /usr/local/src/cmd/check/RCS/check.c,v $
  *
  * Please do not copyright this code.  This code is in the public domain.
@@ -97,17 +97,12 @@ static struct avoid avoid[] = {
     /* common */
     { "/proc", 0, 0 },
     { "/dev", 0, 0 },
-    /* RedHat Linux */
     { "/sys", 0, 0 },
-    { "/dev/pts", 0, 0 },
-    { "/proc/bus/usb", 0, 0 },
-    { "/dev/shm", 0, 0 },
-    { "/proc/sys/fs/binfmt_misc", 0, 0 },
     /* Mac OS X */
     { "/.vol", 0, 0 },
+    { "/net", 0, 0 },
     { "/Network", 0, 0 },
-    { "/automount/Servers", 0, 0 },
-    { "/automount/static", 0, 0 },
+    { "/automount", 0, 0 },
     /* FreeBSD */
     { "/var/named/dev", 0, 0 },
     /* misc */
