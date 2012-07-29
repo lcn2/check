@@ -1,8 +1,8 @@
 /*
  * check - check on checked out RCS files
  *
- * @(#) $Revision: 4.7 $
- * @(#) $Id: check.c,v 4.7 2011/07/10 04:47:09 chongo Exp chongo $
+ * @(#) $Revision: 4.8 $
+ * @(#) $Id: check.c,v 4.8 2011/07/25 06:33:51 chongo Exp chongo $
  * @(#) $Source: /usr/local/src/cmd/check/RCS/check.c,v $
  *
  * Please do not copyright this code.  This code is in the public domain.
@@ -399,15 +399,15 @@ process_arg(char *arg)
 	 * calls this function once with a NULL pointer.  We treat
 	 * this special no arg case as if . were given.
 	 */
-	dbg(1, "arg was NULL");
+	dbg(2, "arg was NULL");
 	arg = ".";
     }
     if (arg[0] == '\0') {
 	/* empty strings are considered . as well */
-	dbg(1, "arg was empty");
+	dbg(2, "arg was empty");
 	arg = ".";
     }
-    dbg(1, "processing arg: %s", arg);
+    dbg(2, "processing arg: %s", arg);
 
     /*
      * case: arg ends in ,v
