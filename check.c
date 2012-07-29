@@ -1,8 +1,8 @@
 /*
  * check - check on checked out RCS files
  *
- * @(#) $Revision: 4.8 $
- * @(#) $Id: check.c,v 4.8 2011/07/25 06:33:51 chongo Exp chongo $
+ * @(#) $Revision: 4.9 $
+ * @(#) $Id: check.c,v 4.9 2012/07/29 08:24:47 root Exp root $
  * @(#) $Source: /usr/local/src/cmd/check/RCS/check.c,v $
  *
  * Please do not copyright this code.  This code is in the public domain.
@@ -2300,7 +2300,11 @@ dbg(int level, char *fmt, ...)
      * print debugging to stdout
      */
     va_start(ap, fmt);
-    fprintf(stderr, "Debug[%d]: ", level);
+    if (prog == NULL) {
+	fprintf(stderr, "Debug[%d]: ", level);
+    } else {
+	fprintf(stderr, "%s: debug[%d]: ", prog, level);
+    }
     vfprintf(stderr, fmt, ap);
     va_end(ap);
     fputc('\n', stderr);
