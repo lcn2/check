@@ -2,8 +2,8 @@
 #
 # check - check for checked out RCS files
 #
-# @(#) $Revision: 3.3 $
-# @(#) $Id: Makefile,v 3.3 2007/03/18 06:29:22 chongo Exp chongo $
+# @(#) $Revision: 3.4 $
+# @(#) $Id: Makefile,v 3.4 2013/12/28 15:50:51 chongo Exp chongo $
 # @(#) $Source: /usr/local/src/bin/check/RCS/Makefile,v $
 #
 # Please do not copyright this code.  This code is in the public domain.
@@ -17,7 +17,7 @@
 # PERFORMANCE OF THIS SOFTWARE.
 
 SHELL = /bin/sh
-DESTDIR = /usr/local/bin
+DESTBIN = /usr/local/bin
 RM = rm
 CP = cp
 CHMOD = chmod
@@ -43,12 +43,12 @@ rcheck: check
 
 install: all
 	@for i in ${TARGETS}; do \
-	    echo "${RM} -f ${DESTDIR}/$$i"; \
-	    ${RM} -f "${DESTDIR}/$$i"; \
-	    echo "${CP} -f $$i ${DESTDIR}"; \
-	    ${CP} -f "$$i" "${DESTDIR}"; \
-	    echo "${CHMOD} 0555 ${DESTDIR}/$$i"; \
-	    ${CHMOD} 0555 "${DESTDIR}/$$i"; \
+	    echo "${RM} -f ${DESTBIN}/$$i"; \
+	    ${RM} -f "${DESTBIN}/$$i"; \
+	    echo "${CP} -f $$i ${DESTBIN}"; \
+	    ${CP} -f "$$i" "${DESTBIN}"; \
+	    echo "${CHMOD} 0555 ${DESTBIN}/$$i"; \
+	    ${CHMOD} 0555 "${DESTBIN}/$$i"; \
 	done
 
 clean:
