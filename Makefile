@@ -2,8 +2,8 @@
 #
 # check - check for checked out RCS files
 #
-# @(#) $Revision: 3.4 $
-# @(#) $Id: Makefile,v 3.4 2013/12/28 15:50:51 chongo Exp chongo $
+# @(#) $Revision: 3.5 $
+# @(#) $Id: Makefile,v 3.5 2013/12/28 15:52:43 chongo Exp chongo $
 # @(#) $Source: /usr/local/src/bin/check/RCS/Makefile,v $
 #
 # Please do not copyright this code.  This code is in the public domain.
@@ -59,13 +59,13 @@ clobber: clean
 
 # push source to remote sites
 #
-pushsrc: all
+pushsrc:
 	${RSRCPSH} -v -x . ${THISDIR}
 
-pushsrcq: all
+pushsrcq:
 	@${RSRCPSH} -q . ${THISDIR}
 
-pushsrcn: all
+pushsrcn:
 	${RSRCPSH} -v -x -n . ${THISDIR}
 
 # run make on remote hosts
