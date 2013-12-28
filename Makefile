@@ -2,9 +2,9 @@
 #
 # check - check for checked out RCS files
 #
-# @(#) $Revision: 3.2 $
-# @(#) $Id: Makefile,v 3.2 2007/03/17 12:27:05 chongo Exp chongo $
-# @(#) $Source: /usr/local/src/cmd/check/RCS/Makefile,v $
+# @(#) $Revision: 3.3 $
+# @(#) $Id: Makefile,v 3.3 2007/03/18 06:29:22 chongo Exp chongo $
+# @(#) $Source: /usr/local/src/bin/check/RCS/Makefile,v $
 #
 # Please do not copyright this code.  This code is in the public domain.
 #
@@ -17,7 +17,7 @@
 # PERFORMANCE OF THIS SOFTWARE.
 
 SHELL = /bin/sh
-DEST = /usr/local/bin
+DESTDIR = /usr/local/bin
 RM = rm
 CP = cp
 CHMOD = chmod
@@ -25,6 +25,12 @@ CC = cc
 CFLAGS = -O3 -g3 -Wall -W
 
 TARGETS = check rcheck
+
+# remote operations
+#
+THISDIR= check
+RSRCPSH= rsrcpush
+RMAKE= rmake
 
 all: ${TARGETS}
 
@@ -37,12 +43,12 @@ rcheck: check
 
 install: all
 	@for i in ${TARGETS}; do \
-	    echo "${RM} -f ${DEST}/$$i"; \
-	    ${RM} -f "${DEST}/$$i"; \
-	    echo "${CP} -f $$i ${DEST}"; \
-	    ${CP} -f "$$i" "${DEST}"; \
-	    echo "${CHMOD} 0555 ${DEST}/$$i"; \
-	    ${CHMOD} 0555 "${DEST}/$$i"; \
+	    echo "${RM} -f ${DESTDIR}/$$i"; \
+	    ${RM} -f "${DESTDIR}/$$i"; \
+	    echo "${CP} -f $$i ${DESTDIR}"; \
+	    ${CP} -f "$$i" "${DESTDIR}"; \
+	    echo "${CHMOD} 0555 ${DESTDIR}/$$i"; \
+	    ${CHMOD} 0555 "${DESTDIR}/$$i"; \
 	done
 
 clean:
@@ -50,3 +56,28 @@ clean:
 
 clobber: clean
 	${RM} -f check rcheck
+
+# push source to remote sites
+#
+pushsrc: all
+	${RSRCPSH} -v -x . ${THISDIR}
+
+pushsrcq: all
+	@${RSRCPSH} -q . ${THISDIR}
+
+pushsrcn: all
+	${RSRCPSH} -v -x -n . ${THISDIR}
+
+# run make on remote hosts
+#
+rmtall:
+	${RMAKE} ${THISDIR} all
+
+rmtinstall:
+	${RMAKE} ${THISDIR} install
+
+rmtclean:
+	${RMAKE} ${THISDIR} clean
+
+rmtclobber:
+	${RMAKE} ${THISDIR} clobber
