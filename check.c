@@ -1,9 +1,9 @@
 /*
  * check - check on checked out RCS files
  *
- * @(#) $Revision: 4.9 $
- * @(#) $Id: check.c,v 4.9 2012/07/29 08:24:47 root Exp root $
- * @(#) $Source: /usr/local/src/cmd/check/RCS/check.c,v $
+ * @(#) $Revision: 4.10 $
+ * @(#) $Id: check.c,v 4.10 2012/07/29 08:33:42 root Exp root $
+ * @(#) $Source: /usr/local/src/bin/check/RCS/check.c,v $
  *
  * Please do not copyright this code.  This code is in the public domain.
  *
@@ -94,21 +94,53 @@ struct avoid {		/* devices to avoid recursing into under -r */
     dev_t device;	/* mount point device number if exists == 1 */
 };
 static struct avoid avoid[] = {
+
     /* common */
-    { "/proc", 0, 0 },
     { "/dev", 0, 0 },
+    { "/dev/pts", 0, 0 },
+    { "/proc", 0, 0 },
     { "/sys", 0, 0 },
+
+    /* RedHat Linux */
+    { "/dev/hugepages", 0, 0 },
+    { "/dev/mqueue", 0, 0 },
+    { "/dev/shm", 0, 0 },
+    { "/proc/bus/usb", 0, 0 },
+    { "/proc/sys/fs/binfmt_misc", 0, 0 },
+    { "/proc/sys/fs/binfmt_misc", 0, 0 },
+    { "/run", 0, 0 },
+    { "/sys/fs/cgroup", 0, 0 },
+    { "/sys/fs/cgroup/blkio", 0, 0 },
+    { "/sys/fs/cgroup/cpu,cpuacct", 0, 0 },
+    { "/sys/fs/cgroup/cpuset", 0, 0 },
+    { "/sys/fs/cgroup/devices", 0, 0 },
+    { "/sys/fs/cgroup/freezer", 0, 0 },
+    { "/sys/fs/cgroup/hugetlb", 0, 0 },
+    { "/sys/fs/cgroup/memory", 0, 0 },
+    { "/sys/fs/cgroup/net_cls", 0, 0 },
+    { "/sys/fs/cgroup/perf_event", 0, 0 },
+    { "/sys/fs/cgroup/systemd", 0, 0 },
+    { "/sys/fs/pstore", 0, 0 },
+    { "/sys/fs/selinux", 0, 0 },
+    { "/sys/kernel/config", 0, 0 },
+    { "/sys/kernel/debug", 0, 0 },
+    { "/sys/kernel/security", 0, 0 },
+
     /* Mac OS X */
-    { "/.vol", 0, 0 },
+    { "/automount/Servers", 0, 0 },
+    { "/automount/static", 0, 0 },
     { "/net", 0, 0 },
     { "/Network", 0, 0 },
-    { "/automount", 0, 0 },
+    { "/.vol", 0, 0 },
+
     /* FreeBSD */
     { "/var/named/dev", 0, 0 },
+
     /* misc */
     { "/afs", 0, 0 },
+
     /* end of list */
-    { NULL, 0, 0 }
+    { NULL, 0, 0 }	/* MUST BE LAST */
 };
 static int avoid_setup = 0;	/* avoid table has been setup */
 
@@ -2009,16 +2041,16 @@ base_name(char *path)
      * firewall
      */
     if (path == NULL) {
-    fatal("base_name", "passed NULL ptr", 0);
-    /*NOTREACHED*/
-}
+	fatal("base_name", "passed NULL ptr", 0);
+	/*NOTREACHED*/
+    }
 
-/*
- * duplicate path so that basename() will not modify the path argument
- */
-errno = 0;
-path_dup = strdup(path);
-if (path_dup == NULL) {
+    /*
+     * duplicate path so that basename() will not modify the path argument
+     */
+    errno = 0;
+    path_dup = strdup(path);
+    if (path_dup == NULL) {
 	fatal("cannot allocate memory", "16", errno);
 	/*NOTREACHED*/
     }
