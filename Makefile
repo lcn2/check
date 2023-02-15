@@ -2,8 +2,8 @@
 #
 # check - check for checked out RCS files
 #
-# @(#) $Revision: 3.8 $
-# @(#) $Id: Makefile,v 3.8 2014/03/15 23:45:49 root Exp root $
+# @(#) $Revision: 3.9 $
+# @(#) $Id: Makefile,v 3.9 2014/03/15 23:59:57 root Exp $
 # @(#) $Source: /usr/local/src/bin/check/RCS/Makefile,v $
 #
 # Please do not copyright this code.  This code is in the public domain.

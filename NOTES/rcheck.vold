@@ -32,36 +32,47 @@
 
 # setup
 #
-if [[ ! -x /usr/local/bin/check ]]; then
-    echo "$0: Fatal: /usr/local/bin/check is not executable/found" 1>&2
+CHECK="/usr/local/bin/check"
+if [[ ! -x "$CHECK" ]]; then
+    echo "$0: Fatal: $CHECK is not executable/found" 1>&2
     exit 1
 fi
 if [[ $# -lt 1 ]]; then
-    ARG_SET="$PWD"
-else
-    ARG_SET="$@"
-fi
-if [ -x /bin/egrep ]; then
-    EGREP_PROG="/bin/egrep"
-elif [ -x /usr/bin/egrep ]; then
-    EGREP_PROG="/usr/bin/egrep"
-else
-    echo "$0: Fatal: egrep is not executable/found" 1>&2
-    exit 2
+    set -- $(/bin/pwd)
 fi
 
-# look for RCS checked out config files
+# process each arg
 #
-/usr/bin/find $ARG_SET -name RCS -type d -print 2>/dev/null |
-  "$EGREP_PROG" -v '/\.OLD/|/UNUSED/' |
-  while read rcsdir; do
-    if [[ ! -x "$rcsdir" || ! -r "$rcsdir" ]]; then
-	echo "# Warning: cannot read/search $rcsdir" 1>&2
-	continue
+while [[ "$#" -gt 0 ]]; do
+
+    # avoid problems with leading -'s
+    #
+    ORIG_ARG="$1";
+    case "$1" in
+    -*) ARG="./$ORIG_ARG" ;;
+    *) ARG="$ORIG_ARG" ;;
+    esac
+
+    # deal with missing entries
+    #
+    if [[ ! -e "$ARG" ]]; then
+	echo "$0: cannot find: $ORIG_ARG" 1>&2
+
+    # case dir: look at all RCS subdirs (avoiding stuff like /proc, /dev/pts)
+    #
+    elif [[ -d "$ARG" ]]; then
+	/usr/bin/find "$ARG" \( -fstype proc -o -fstype usbdevfs -o \
+				-fstype devpts \) -prune -o \
+		      -type d -name RCS -print0 | \
+	  /usr/bin/xargs -0 -n1 "$CHECK" --
+
+    # case: unknown type
+    #
+    else
+	echo "$0: not a directory: $ORIG_ARG" 1>&2
     fi
-    dir=`/usr/bin/dirname "$rcsdir"`
-    /usr/local/bin/check "$rcsdir" | /bin/sed -e "s:^:$dir/:"
-  done
+    shift
+done
 
 # All done!!  -- Jessica Noll, Age 2
 #

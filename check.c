@@ -1,8 +1,8 @@
 /*
  * check - check on checked out RCS files
  *
- * @(#) $Revision: 4.10 $
- * @(#) $Id: check.c,v 4.10 2012/07/29 08:33:42 root Exp root $
+ * @(#) $Revision: 4.11 $
+ * @(#) $Id: check.c,v 4.11 2015/09/06 11:51:26 root Exp $
  * @(#) $Source: /usr/local/src/bin/check/RCS/check.c,v $
  *
  * Please do not copyright this code.  This code is in the public domain.
