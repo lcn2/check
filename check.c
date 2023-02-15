@@ -22,8 +22,8 @@
  * a complete code rewrite, the change of -l to prints lock info (not
  * filenames), and rest of the flags: these were all done by:
  *
- * 	chongo (Landon Curt Noll) /\oo/\
- * 	http://www.isthe.com/chongo/index.html
+ *	chongo (Landon Curt Noll) /\oo/\
+ *	http://www.isthe.com/chongo/index.html
  *
  * Share and Enjoy!  :-)
  */
@@ -49,8 +49,8 @@
 
 #define MAX_OWNER_LEN 20	/* longest owner printed */
 #define MAX_REVIS_LEN 20	/* longest owner revision printed */
-static char owner[MAX_OWNER_LEN+1];	/* owner of file co'd */
-static char revision[MAX_REVIS_LEN+1];	/* revision of file co'd */
+static char owner[MAX_OWNER_LEN+1+1];		/* owner of file co'd */
+static char revision[MAX_REVIS_LEN+1+1];	/* revision of file co'd */
 static int cflag = 0;		/* print 1 word comment before filenames */
 static int dflag = 0;		/* note when file and RCS differ */
 static int eflag = 0;		/* report files that are under RCS */
@@ -385,7 +385,7 @@ parse_args(int argc, char **argv)
 	dbg(1, "-r: recursive search");
     }
     if (skip != NULL) {
-    	for (s=skip; s != NULL; s = s->next) {
+	for (s=skip; s != NULL; s = s->next) {
 	    dbg(1, "-s: skip paths under: %s", s->path);
 	}
     }
@@ -475,7 +475,7 @@ process_arg(char *arg)
 	     * case: arg ends in ,v and has NO / and RCS as a ,v file
 	     *
 	     * NOTE: We have to check the RCS sub-directory even when
-	     * 	     the file, arg, exists.
+	     *	     the file, arg, exists.
 	     */
 	    tmp = filev_2_file(arg);
 	    modarg = pathname_2_rcs(tmp);
@@ -711,7 +711,7 @@ scan_rcsfile(char *filename, char *arg)
     struct stat sbuf;	/* filename status */
     struct stat fbuf;	/* non-RCS  status */
     int ret;		/* 0 ==> nothing to print, 1 ==> something to print */
-    char resolved[PATH_MAX+1];	/* full pathname of a locked file */
+    char resolved[PATH_MAX+2+1];	/* full pathname of a locked file */
     int missing;	/* 1 ==> RCS file not checked out */
     int need_nl = 0;	/* 1 ==> need some newline since we printed something */
     int free_arg = 0;	/* 1 ==> we need to free arg because we alloced it */
@@ -756,7 +756,7 @@ scan_rcsfile(char *filename, char *arg)
     /*
      * resolve absolute path if -p
      */
-    resolved[0] = '\0';
+    memset(resolved, 0, sizeof(resolved));
     if (pflag) {
 
 	/* try to resolve the argument */
@@ -771,11 +771,11 @@ scan_rcsfile(char *filename, char *arg)
 	    if (realpath(missing_dir, dir_resolved) == NULL) {
 		warn("cannot resolve missing dir", missing_dir, errno);
 		set_exitcode_mask(EXIT_MASK_ACCESS);
-		snprintf(resolved, PATH_MAX+1, "%s/%s",
+		snprintf(resolved, PATH_MAX+1+1, "%s/%s",
 			 strcmp(missing_dir, "/") == 0 ? "" : missing_dir,
 			 missing_base);
 	    } else {
-		snprintf(resolved, PATH_MAX+1, "%s/%s",
+		snprintf(resolved, PATH_MAX+1+1, "%s/%s",
 			 strcmp(dir_resolved, "/") == 0 ? "" : dir_resolved,
 			 missing_base);
 	    }
@@ -864,7 +864,7 @@ scan_rcsfile(char *filename, char *arg)
 	}
 	fflush(stdout);
 
-    	/*
+	/*
 	 * Use:
 	 *
 	 *	rcsdiff -q arg
@@ -1108,7 +1108,7 @@ scan_rcsdir(char *dir1, char *dir2, int recurse)
 		printf("\t%s", ctime(&(fbuf.st_mtime)));
 		/* ctime string ends in a newline */
 	    } else {
-	    	putchar('\n');
+		putchar('\n');
 	    }
 	    fflush(stdout);
 	    free(filename);
@@ -1269,7 +1269,7 @@ scan_rcsdir(char *dir1, char *dir2, int recurse)
 		    /* dir1/foo,v exists, ignore dir2/foo,v */
 		    free(filename);
 		    dbg(9, "ignoring in 2nd dir, 1st dir *,v found: %s",
-		    	f->d_name);
+			f->d_name);
 		    errno = 0;
 		    continue;
 		}
@@ -1538,7 +1538,7 @@ rcs_2_pathname(char *rcsname)
 	    dir[dirlen] = '\0';
 	    /* deal with any trailing / */
 	    if (dirlen > 0 && dir[dirlen-1] == '/') {
-	    	--dirlen;
+		--dirlen;
 		dir[dirlen] = '\0';
 	    /* if we had just RCS/file,v, assume empty directory path */
 	    } else if (dir[0] == '\0') {
@@ -1929,14 +1929,14 @@ readrcs(char *f, struct stat *statPtr)
     p = buf + sizeof("head") - 1;
     p = skipblanks(p);
     if (check_rcs_hdr(p, "malformed RCS file, invalid head line",
-    		      fname, end_rcs_header)) {
+		      fname, end_rcs_header)) {
 	close(fd);
 	set_exitcode_mask(EXIT_MASK_ACCESS);
 	return 0;
     }
     q = strchr(p, ';');
     if (check_rcs_hdr(q, "malformed RCS file, invalid head format",
-    		      fname, end_rcs_header)) {
+		      fname, end_rcs_header)) {
 	close(fd);
 	set_exitcode_mask(EXIT_MASK_ACCESS);
 	return 0;
@@ -1947,7 +1947,7 @@ readrcs(char *f, struct stat *statPtr)
      */
     p = strstr(p, "\nlocks");
     if (check_rcs_hdr(p, "malformed RCS file, missing locks section",
-    		      fname, end_rcs_header)) {
+		      fname, end_rcs_header)) {
 	close(fd);
 	set_exitcode_mask(EXIT_MASK_ACCESS);
 	return 0;
@@ -1955,14 +1955,14 @@ readrcs(char *f, struct stat *statPtr)
     p += sizeof("\nlocks") - 1;
     p = skipblanks(p);
     if (check_rcs_hdr(p, "malformed RCS file, invalid locks section",
-    		      fname, end_rcs_header)) {
+		      fname, end_rcs_header)) {
 	close(fd);
 	set_exitcode_mask(EXIT_MASK_ACCESS);
 	return 0;
     }
     q = strchr(p, ';');
     if (check_rcs_hdr(q, "malformed RCS file, invalid locks format",
-    		      fname, end_rcs_header)) {
+		      fname, end_rcs_header)) {
 	close(fd);
 	set_exitcode_mask(EXIT_MASK_ACCESS);
 	return 0;
@@ -2001,8 +2001,8 @@ readrcs(char *f, struct stat *statPtr)
     /*
      * save owner and revision in the global area
      */
-    strncpy(owner, owner_str, sizeof(owner));
-    strncpy(revision, revision_str, sizeof(revision));
+    strncpy(owner, owner_str, sizeof(owner)-1);
+    strncpy(revision, revision_str, sizeof(revision)-1);
     owner[sizeof(owner) - 1] = 0;
     revision[sizeof(revision) - 1] = 0;
 
@@ -2253,7 +2253,7 @@ avoid_init(void)
 	if (stat(parent, &pbuf) < 0) {
 	    /* parent does not exist, leave entry as ignore */
 	    dbg(9, "%s: parent: %s does not exist, no need to avoid",
-	    	p->path, parent);
+		p->path, parent);
 	    free(parent);
 	    parent = NULL;
 	    continue;
@@ -2263,7 +2263,7 @@ avoid_init(void)
 	if (pbuf.st_dev == mbuf.st_dev) {
 	    /* parent same device as path, not a mount point */
 	    dbg(9, "%s: parent: %s has same device number, no need to avoid",
-	    	p->path, parent);
+		p->path, parent);
 	    free(parent);
 	    parent = NULL;
 	    continue;
@@ -2374,7 +2374,7 @@ warn(char *warn1, char *warn2, int err)
 	    fprintf(stderr, "%s: %s: %s\n", program, warn1, strerror(err));
 	} else {
 	    fprintf(stderr, "%s: %s: %s: %s\n",
-	    	    program, warn1, warn2, strerror(err));
+		    program, warn1, warn2, strerror(err));
 	}
     }
     return;
@@ -2411,10 +2411,10 @@ fatal(char *msg1, char *msg2, int err)
     } else {
 	if (msg2 == NULL) {
 	    fprintf(stderr, "%s: Fatal error: %s: %s\n",
-	    	    program, msg1, strerror(err));
+		    program, msg1, strerror(err));
 	} else {
 	    fprintf(stderr, "%s: Fatal error: %s: %s: %s\n",
-	    	    program, msg1, msg2, strerror(err));
+		    program, msg1, msg2, strerror(err));
 	}
     }
     exitcode = EXIT_FATAL;
