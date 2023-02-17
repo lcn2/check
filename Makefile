@@ -12,13 +12,15 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
-SHELL = bash
-DESTBIN = /usr/local/bin
-RM = rm
-CP = cp
-CHMOD = chmod
-CC = cc
-CFLAGS = -O3 -g3 -Wall -W
+SHELL= bash
+DESTBIN= /usr/local/bin
+RM= rm
+CP= cp
+CHMOD= chmod
+CC= cc
+CFLAGS= -O3 -g3 -Wall -W
+INSTALL= install
+
 
 TARGETS = check rcheck
 
@@ -32,14 +34,7 @@ rcheck: check
 	${CP} -p -f $? $@
 
 install: all
-	@for i in ${TARGETS}; do \
-	    echo "${RM} -f ${DESTBIN}/$$i"; \
-	    ${RM} -f "${DESTBIN}/$$i"; \
-	    echo "${CP} -f $$i ${DESTBIN}"; \
-	    ${CP} -f "$$i" "${DESTBIN}"; \
-	    echo "${CHMOD} 0555 ${DESTBIN}/$$i"; \
-	    ${CHMOD} 0555 "${DESTBIN}/$$i"; \
-	done
+	${INSTALL} -m 0555 ${TARGETS} ${DESTBIN}
 
 clean:
 	${RM} -f *.o
