@@ -5,7 +5,18 @@
  * @(#) $Id: check.c,v 4.11 2015/09/06 11:51:26 root Exp $
  * @(#) $Source: /usr/local/src/bin/check/RCS/check.c,v $
  *
- * Please do not copyright this code.  This code is in the public domain.
+ * Copyright (c) 1999-2000,2003-2005,2007,2011,2013-2015,2023,2025 by Landon Curt Noll.  All Rights Reserved.
+ *
+ *
+ * Permission to use, copy, modify, and distribute this software and
+ * its documentation for any purpose and without fee is hereby granted,
+ * provided that the above copyright, this permission notice and text
+ * this comment, and the disclaimer below appear in all of the following:
+ *
+ *       supporting documentation
+ *       source copies
+ *       source works derived from this source
+ *       binaries derived from this source or from derived source
  *
  * LANDON CURT NOLL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE,
  * INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO
@@ -15,18 +26,20 @@
  * OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
  *
- * Long ago, there was an old version of this code that was written
- * by Kipp Hickman.
+ * Long ago, there was an old version of this code that was written by Kipp Hickman.
  *
  * The many bug fixes, the many security fixes, the major code cleanup,
  * a complete code rewrite, the change of -l to prints lock info (not
  * filenames), and rest of the flags: these were all done by:
  *
- *	chongo (Landon Curt Noll) /\oo/\
- *	http://www.isthe.com/chongo/index.html
+ * chongo (Landon Curt Noll) /\oo/\
  *
- * Share and Enjoy!  :-)
+ * http://www.isthe.com/chongo/index.html
+ * https://github.com/lcn2
+ *
+ * Share and Enjoy!	:-)
  */
+
 
 #include <stdio.h>
 #include <sys/types.h>
@@ -47,6 +60,13 @@
 #include <errno.h>
 #include <stdarg.h>
 
+
+/*
+ * official version
+ */
+#define VERSION "4.1.1 2025-04-08"	    /* format: major.minor YYYY-MM-DD */
+
+
 #define MAX_OWNER_LEN 20	/* longest owner printed */
 #define MAX_REVIS_LEN 20	/* longest owner revision printed */
 static char owner[MAX_OWNER_LEN+1+1];		/* owner of file co'd */
@@ -64,6 +84,7 @@ static int Rflag = 0;		/* report on *.rpm{orig,init,save,new} files */
 static int tflag = 0;		/* print RCS mod date timestamp */
 static int vflag = 0;		/* verbosity level */
 static int xflag = 0;		/* do not cross filesystem when recursing */
+static const char * const version = VERSION;
 
 /*
  * -r mode related static variables
@@ -239,7 +260,7 @@ parse_args(int argc, char **argv)
 	pflag = 1;
 	rflag = 1;
     }
-    while ((i = getopt(argc, argv, "acdelmpqrRs:tv:xh")) != -1) {
+    while ((i = getopt(argc, argv, "acdelmpqrRs:tv:xhV")) != -1) {
 	switch (i) {
 	case 'a':
 	    cflag = 1;
@@ -324,13 +345,17 @@ parse_args(int argc, char **argv)
 	case 'x':
 	    xflag = 1;
 	    break;
+	case 'V':
+	    (void) printf("%s\n", version);
+	    exit(0); /* ooo */
+	    /*NOTREACHED*/
 	case 'h':
 	    hflag = 1;
 	    /*FALLTHRU*/
 	default:
 	    fprintf(stderr,
 	    "usage: %s [-a] [-A] [-c] [-d] [-e] [-l] [-m] [-p] [-r] [-R]\n"
-	    "\t\t[-s /dir]... [-t] [-x] [-h] [-v level] [path ...]\n"
+	    "\t\t[-s /dir]... [-t] [-x] [-h] [-v level] [-V] [path ...]\n"
 	    "\n"
 	    "\t-a\t\t-c -d -m -p (with rcheck: -r)\n"
 	    "\t-A\t\t-c -d -e -m -p -R (with rcheck: -r)\n"
@@ -348,6 +373,7 @@ parse_args(int argc, char **argv)
 	    "\t-t\t\tprint RCS modification timestamp (def: don't)\n"
 	    "\t-x\t\tdo not cross filesystems when -r (def: do)\n"
 	    "\t-v level\tdebugging level (def: 0)\n"
+	    "\t-V\t\tprint version string and exit\n"
 	    "\n"
 	    "exit 0 ==> all OK\n"
 	    "exit bit 0 ==> locked file (1, 3, 5, 7, 9, 11, 13, 15,\n"
