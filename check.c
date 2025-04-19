@@ -1,12 +1,7 @@
 /*
  * check - check on checked out RCS files
  *
- * @(#) $Revision: 4.11 $
- * @(#) $Id: check.c,v 4.11 2015/09/06 11:51:26 root Exp $
- * @(#) $Source: /usr/local/src/bin/check/RCS/check.c,v $
- *
  * Copyright (c) 1999-2000,2003-2005,2007,2011,2013-2015,2023,2025 by Landon Curt Noll.  All Rights Reserved.
- *
  *
  * Permission to use, copy, modify, and distribute this software and
  * its documentation for any purpose and without fee is hereby granted,
@@ -37,7 +32,7 @@
  * http://www.isthe.com/chongo/index.html
  * https://github.com/lcn2
  *
- * Share and Enjoy!	:-)
+ * Share and enjoy!  :-)
  */
 
 
